@@ -173,11 +173,18 @@ export default function HeroSection() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.8, duration: 0.5 }}
                 className="absolute -bottom-10 -left-8"
+                style={{ willChange: "transform" }}
               >
                 <motion.div
-                  animate={{ y: [0, -15, 0] }}
-                  transition={{ duration: 7, repeat: Infinity, ease: "easeInOut", repeatType: "loop" }}
+                  animate={{ y: [0, -10, 0] }}
+                  transition={{
+                    duration: 6,
+                    repeat: Infinity,
+                    ease: [0.45, 0, 0.55, 1],
+                    repeatType: "loop",
+                  }}
                   className="bg-white rounded-2xl shadow-soft-lg border border-border px-5 py-3.5"
+                  style={{ willChange: "transform", backfaceVisibility: "hidden", transform: "translateZ(0)" }}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-accent-warm/10 flex items-center justify-center">
@@ -200,11 +207,18 @@ export default function HeroSection() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 1.0, duration: 0.5 }}
                 className="absolute -top-6 -right-6"
+                style={{ willChange: "transform" }}
               >
                 <motion.div
-                  animate={{ y: [0, 15, 0] }}
-                  transition={{ duration: 7, repeat: Infinity, ease: "easeInOut", repeatType: "loop" }}
+                  animate={{ y: [0, 10, 0] }}
+                  transition={{
+                    duration: 6,
+                    repeat: Infinity,
+                    ease: [0.45, 0, 0.55, 1],
+                    repeatType: "loop",
+                  }}
                   className="bg-white rounded-2xl shadow-soft-lg border border-border px-5 py-3.5"
+                  style={{ willChange: "transform", backfaceVisibility: "hidden", transform: "translateZ(0)" }}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
