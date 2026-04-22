@@ -1,0 +1,14 @@
+$response = curl.exe -s -X POST `
+   "https://auth-preprod.ffrandonnee.fr/realms/master/protocol/openid-connect/token" `
+   -H "Content-Type: application/x-www-form-urlencoded" `
+   -d "grant_type=client_credentials" `
+   -d "client_id=zendesk-vie-federale-sa" `
+   -d "client_secret=HXE0L7cJ9AUuo1CQ1eD99QZ6qSO6LrSK" `
+   -d "scope=sgvf:individu:read"
+$token = ($response | ConvertFrom-Json).access_token
+echo $token
+$res = curl.exe -X GET `
+   "https://api-vie-federale-preprod.ffrandonnee.fr/api/v2-public/IndividuService/GetUserInformation?prenom=christian&nom=duplessis" `
+   -H "Authorization: Bearer $token"
+$res | ConvertFrom-Json
+echo $res
