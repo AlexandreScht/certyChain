@@ -1,115 +1,106 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Shield } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ShieldCheck, Menu, X } from "lucide-react";
 
-const navLinks = [
-  { label: "Problème", href: "#probleme" },
-  { label: "Comment ça marche", href: "#fonctionnement" },
-  { label: "Fonctionnalités", href: "#fonctionnalites" },
+const links = [
+  { label: "Principe", href: "#principe" },
+  { label: "Pour les écoles", href: "#ecoles" },
+  { label: "Sécurité", href: "#securite" },
   { label: "Tarifs", href: "#tarifs" },
 ];
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
+    onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   return (
-    <motion.header
-      initial={{ y: -20, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.5, ease: "easeOut" }}
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled
-          ? "py-3 bg-white/80 backdrop-blur-xl border-b border-border shadow-soft-sm"
-          : "py-5 bg-transparent"
-      }`}
-    >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <nav className="flex items-center justify-between" aria-label="Navigation principale">
-          {/* Logo */}
-          <a href="#" className="flex items-center gap-2.5 group cursor-pointer">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cta to-accent flex items-center justify-center shadow-soft-sm group-hover:shadow-soft transition-shadow duration-200">
-              <Shield className="w-5 h-5 text-white" strokeWidth={2.5} />
-            </div>
-            <span className="text-xl font-bold text-primary tracking-tight">
-              Certify<span className="text-cta">Chain</span>
+    <header className="fixed top-4 left-4 right-4 z-50 flex justify-center pointer-events-none">
+      <nav
+        className={`pointer-events-auto w-full max-w-6xl transition-all duration-500 ${
+          scrolled ? "glass-strong" : "glass"
+        } rounded-full px-4 md:px-6 py-2.5 flex items-center gap-6`}
+        aria-label="Navigation principale"
+      >
+        <a href="#top" className="flex items-center gap-2.5 group cursor-pointer">
+          <span className="relative grid place-items-center w-9 h-9 rounded-xl bg-linear-to-br from-indigo-600 to-indigo-500 text-white shadow-[0_8px_20px_-8px_rgba(79,70,229,0.7)]">
+            <ShieldCheck className="w-5 h-5" strokeWidth={2.2} />
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-lime-500 ring-2 ring-white">
+              <span className="absolute inset-0 rounded-full bg-lime-500 animate-pulse-ring" />
             </span>
-          </a>
+          </span>
+          <span className="font-display font-bold text-ink text-lg tracking-tight">
+            Certify<span className="grad-text-cool">Chain</span>
+          </span>
+        </a>
 
-          {/* Desktop links */}
-          <div className="hidden md:flex items-center gap-8">
-            {navLinks.map((link) => (
+        <ul className="hidden md:flex items-center gap-1 mx-auto">
+          {links.map((l) => (
+            <li key={l.href}>
               <a
-                key={link.href}
-                href={link.href}
-                className="text-sm font-medium text-text-muted hover:text-primary transition-colors duration-200 cursor-pointer"
+                href={l.href}
+                className="relative px-3.5 py-1.5 text-sm font-medium text-muted hover:text-ink rounded-full transition-colors cursor-pointer"
               >
-                {link.label}
+                <span className="relative z-10">{l.label}</span>
+                <span className="absolute inset-0 rounded-full bg-white/0 hover:bg-white/60 transition-colors" />
               </a>
-            ))}
-          </div>
+            </li>
+          ))}
+        </ul>
 
-          {/* CTA desktop */}
-          <div className="hidden md:flex items-center gap-3">
-            <a
-              href="#waitlist"
-              className="px-5 py-2.5 text-sm font-semibold text-white bg-cta hover:bg-cta-hover rounded-xl transition-all duration-200 cursor-pointer shadow-soft-sm hover:shadow-soft glow-cta"
-            >
-              Rejoindre la liste d&apos;attente
-            </a>
-          </div>
-
-          {/* Mobile toggle */}
-          <button
-            className="md:hidden p-2 rounded-lg hover:bg-border-light transition-colors cursor-pointer"
-            onClick={() => setMobileOpen(!mobileOpen)}
-            aria-label="Menu"
+        <div className="hidden md:flex items-center gap-2 ml-auto">
+          <a
+            href="#demo"
+            className="text-sm font-medium text-muted hover:text-ink px-3 py-1.5 rounded-full transition-colors cursor-pointer"
           >
-            {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-        </nav>
+            Connexion
+          </a>
+          <a
+            href="#cta"
+            className="cta-primary cursor-pointer text-sm font-semibold px-4 py-2 rounded-full"
+          >
+            Certifier mon école
+          </a>
+        </div>
 
-        {/* Mobile menu */}
-        <AnimatePresence>
-          {mobileOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.25 }}
-              className="md:hidden overflow-hidden"
+        <button
+          className="md:hidden ml-auto neumorph-pill rounded-full w-10 h-10 grid place-items-center cursor-pointer"
+          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? "Fermer le menu" : "Ouvrir le menu"}
+          aria-expanded={open}
+        >
+          {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
+      </nav>
+
+      {open && (
+        <div className="pointer-events-auto md:hidden absolute top-full left-0 right-0 mt-2 mx-4 glass-strong rounded-2xl p-4 flex flex-col gap-1">
+          {links.map((l) => (
+            <a
+              key={l.href}
+              href={l.href}
+              onClick={() => setOpen(false)}
+              className="px-4 py-3 rounded-xl hover:bg-white/60 font-medium text-ink cursor-pointer"
             >
-              <div className="py-4 space-y-1">
-                {navLinks.map((link) => (
-                  <a
-                    key={link.href}
-                    href={link.href}
-                    onClick={() => setMobileOpen(false)}
-                    className="block px-4 py-3 text-sm font-medium text-text-muted hover:text-primary hover:bg-border-light rounded-xl transition-colors cursor-pointer"
-                  >
-                    {link.label}
-                  </a>
-                ))}
-                <a
-                  href="#waitlist"
-                  onClick={() => setMobileOpen(false)}
-                  className="block mx-4 mt-3 px-4 py-3 text-sm font-semibold text-white bg-cta hover:bg-cta-hover rounded-xl text-center transition-colors cursor-pointer"
-                >
-                  Rejoindre la liste d&apos;attente
-                </a>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </motion.header>
+              {l.label}
+            </a>
+          ))}
+          <a
+            href="#cta"
+            onClick={() => setOpen(false)}
+            className="cta-primary cursor-pointer text-sm font-semibold px-4 py-3 rounded-xl text-center mt-2"
+          >
+            Certifier mon école
+          </a>
+        </div>
+      )}
+    </header>
   );
 }

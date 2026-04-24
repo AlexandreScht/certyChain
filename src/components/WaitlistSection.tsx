@@ -1,143 +1,151 @@
 "use client";
 
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { ArrowRight, CheckCircle2, Gift } from "lucide-react";
+import { useState, useRef } from "react";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { Mail, ArrowRight, CheckCircle2, Building2 } from "lucide-react";
+
+if (typeof window !== "undefined") gsap.registerPlugin(ScrollTrigger);
 
 export default function WaitlistSection() {
+  const rootRef = useRef<HTMLElement>(null);
   const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [school, setSchool] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (email.trim()) {
-      setSubmitted(true);
-      setEmail("");
-      setName("");
-      setSchool("");
-    }
-  };
+  useGSAP(
+    () => {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce) return;
+
+      gsap.from("[data-cta-content]", {
+        y: 30, opacity: 0, duration: 0.9, ease: "power3.out",
+        scrollTrigger: { trigger: rootRef.current, start: "top 80%" },
+      });
+
+      // Scaling breathing on card
+      gsap.to("[data-cta-card]", {
+        scale: 1.01,
+        duration: 3,
+        ease: "sine.inOut",
+        yoyo: true,
+        repeat: -1,
+      });
+    },
+    { scope: rootRef }
+  );
 
   return (
     <section
-      id="waitlist"
-      className="py-24 lg:py-32 relative overflow-hidden"
+      ref={rootRef}
+      id="cta"
+      className="relative py-28 md:py-36 overflow-hidden"
     >
-      {/* Dark gradient background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary-light to-secondary" />
-      <div className="absolute inset-0">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-cta/10 rounded-full blur-[120px] -translate-y-1/4 translate-x-1/4" />
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-accent/10 rounded-full blur-[100px] translate-y-1/4 -translate-x-1/4" />
-      </div>
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-mesh opacity-70"
+      />
+      <div
+        aria-hidden
+        className="absolute -top-10 left-1/4 w-[380px] h-[380px] rounded-full animate-float-slow"
+        style={{
+          background: "radial-gradient(circle, rgba(99,102,241,0.28), transparent 70%)",
+          filter: "blur(48px)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="absolute bottom-0 right-1/4 w-[320px] h-[320px] rounded-full animate-float-slower"
+        style={{
+          background: "radial-gradient(circle, rgba(236,72,153,0.24), transparent 70%)",
+          filter: "blur(48px)",
+          animationDelay: "-5s",
+        }}
+      />
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.6 }}
-          className="text-center"
+      <div className="relative max-w-4xl mx-auto px-6">
+        <div
+          data-cta-card
+          className="relative glass-strong rounded-4xl p-8 md:p-14 text-center overflow-hidden"
         >
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 border border-white/10 mb-8">
-            <Gift className="w-4 h-4 text-accent-warm" />
-            <span className="text-sm font-semibold text-white/90">
-              3 mois gratuits pour les premiers inscrits
-            </span>
+          <div
+            className="absolute -inset-2 rounded-[2.1rem] grad-ring opacity-25 blur-md animate-spin-slower -z-10"
+            aria-hidden
+          />
+
+          <div data-cta-content>
+            <div className="inline-flex items-center gap-2 neumorph-pill rounded-full px-3.5 py-1.5 text-xs font-semibold text-ink-soft mb-6">
+              <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+              Réservé aux établissements
+            </div>
+            <h2 className="font-display font-bold text-ink tracking-tight text-4xl md:text-5xl lg:text-6xl leading-[1.02] max-w-3xl mx-auto">
+              Faites de votre école{" "}
+              <span className="grad-text">un émetteur certifié</span>.
+            </h2>
+            <p className="mt-5 text-lg text-muted max-w-2xl mx-auto">
+              Rejoignez le pilote CertifyChain. Trois écoles partenaires
+              déjà sélectionnées pour la phase Beta. Onboarding KYB accompagné
+              en 48h.
+            </p>
+
+            {submitted ? (
+              <div className="mt-8 inline-flex items-center gap-2.5 glass rounded-full px-5 py-3 text-success font-semibold">
+                <CheckCircle2 className="w-5 h-5" />
+                Merci ! Notre équipe vous contacte sous 24h ouvrées.
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (email.trim()) setSubmitted(true);
+                }}
+                className="mt-8 max-w-lg mx-auto"
+              >
+                <div className="relative neumorph-sm rounded-full p-1.5 flex items-center gap-1 focus-within:ring-2 focus-within:ring-indigo-300 transition-shadow">
+                  <label htmlFor="cta-email" className="sr-only">
+                    Email professionnel
+                  </label>
+                  <div className="pl-4 text-muted-soft">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="cta-email"
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="email@votre-ecole.fr"
+                    className="flex-1 bg-transparent outline-none px-2 py-2.5 text-sm text-ink placeholder:text-muted-soft min-w-0"
+                  />
+                  <button
+                    type="submit"
+                    className="cta-primary cursor-pointer px-5 py-2.5 rounded-full font-semibold text-sm inline-flex items-center gap-1.5 shrink-0"
+                  >
+                    Rejoindre
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="mt-3 text-xs text-muted-soft">
+                  Aucun engagement · Désinscription en 1 clic · Données
+                  hébergées en France
+                </p>
+              </form>
+            )}
+
+            <div className="mt-10 flex flex-wrap justify-center gap-x-8 gap-y-3 text-sm text-muted">
+              {[
+                "RGPD conforme",
+                "Chiffrement TLS 1.3",
+                "Clés privées HSM",
+                "SLA 99,5 % Beta",
+              ].map((t) => (
+                <span key={t} className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-success" /> {t}
+                </span>
+              ))}
+            </div>
           </div>
-
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white tracking-tight mb-4">
-            Prêt à sécuriser vos diplômes ?
-          </h2>
-          <p className="text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed mb-12">
-            Rejoignez la liste d&apos;attente et soyez parmi les premiers établissements 
-            à émettre des diplômes numériques infalsifiables.
-          </p>
-
-          {/* Form */}
-          {!submitted ? (
-            <motion.form
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.2, duration: 0.5 }}
-              onSubmit={handleSubmit}
-              className="max-w-xl mx-auto space-y-4"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="waitlist-name" className="sr-only">
-                    Votre nom
-                  </label>
-                  <input
-                    id="waitlist-name"
-                    type="text"
-                    placeholder="Votre nom"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full px-5 py-3.5 rounded-xl bg-white/10 border border-white/15 text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cta/40 focus:border-cta/50 transition-all duration-200 text-sm backdrop-blur-sm"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="waitlist-school" className="sr-only">
-                    Nom de l&apos;établissement
-                  </label>
-                  <input
-                    id="waitlist-school"
-                    type="text"
-                    placeholder="Nom de l'établissement"
-                    value={school}
-                    onChange={(e) => setSchool(e.target.value)}
-                    className="w-full px-5 py-3.5 rounded-xl bg-white/10 border border-white/15 text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cta/40 focus:border-cta/50 transition-all duration-200 text-sm backdrop-blur-sm"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <label htmlFor="waitlist-email" className="sr-only">
-                  Email professionnel
-                </label>
-                <input
-                  id="waitlist-email"
-                  type="email"
-                  required
-                  placeholder="votre@ecole.fr"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="flex-1 px-5 py-3.5 rounded-xl bg-white/10 border border-white/15 text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cta/40 focus:border-cta/50 transition-all duration-200 text-sm backdrop-blur-sm"
-                />
-                <button
-                  type="submit"
-                  className="flex items-center justify-center gap-2 px-8 py-3.5 bg-cta hover:bg-cta-hover text-white font-semibold rounded-xl transition-all duration-200 shadow-soft glow-cta cursor-pointer group whitespace-nowrap hover:-translate-y-0.5"
-                >
-                  Rejoindre
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
-                </button>
-              </div>
-              <p className="text-xs text-slate-400 pt-2">
-                En vous inscrivant, vous acceptez d&apos;être contacté(e) lors du lancement. 
-                Aucun spam, promis.
-              </p>
-            </motion.form>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4 }}
-              className="max-w-md mx-auto text-center"
-            >
-              <div className="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-8 h-8 text-success" />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-2">Vous êtes sur la liste !</h3>
-              <p className="text-slate-300">
-                Nous vous contacterons dès que CertifyChain sera disponible. 
-                Merci de votre confiance.
-              </p>
-            </motion.div>
-          )}
-        </motion.div>
+        </div>
       </div>
     </section>
   );

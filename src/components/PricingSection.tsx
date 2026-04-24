@@ -1,183 +1,183 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { Check, Sparkles } from "lucide-react";
+import { useRef } from "react";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { Check, Sparkles, ArrowRight } from "lucide-react";
 
-const tiers = [
+if (typeof window !== "undefined") gsap.registerPlugin(ScrollTrigger);
+
+const plans = [
   {
     name: "Starter",
     price: "49",
-    description: "Pour les petites écoles et CFA",
+    tagline: "Petites écoles, CFA",
+    cta: "Commencer",
     features: [
-      "500 diplômes / an",
+      "Jusqu'à 500 diplômes / an",
       "1 administrateur",
-      "Signature cryptographique",
-      "Page de vérification publique",
-      "Support par email",
+      "Signature Ed25519 + PKI",
+      "Vérification publique illimitée",
+      "Support email 48h",
     ],
-    cta: "Rejoindre la waitlist",
-    highlighted: false,
+    highlight: false,
   },
   {
     name: "Pro",
     price: "149",
-    description: "Pour les écoles de taille moyenne",
+    tagline: "Écoles de taille moyenne",
+    cta: "Essayer Pro",
     features: [
       "Diplômes illimités",
       "5 administrateurs",
-      "Import CSV en masse",
-      "QR codes",
+      "IA Beta : extraction, anomalies",
+      "Assistant Élève LinkedIn",
+      "Contextualisation Recruteur",
       "Statistiques avancées",
       "Support prioritaire",
     ],
-    cta: "Rejoindre la waitlist",
-    highlighted: true,
+    highlight: true,
+    badge: "Le plus choisi",
   },
   {
     name: "Enterprise",
-    price: "399",
-    suffix: "+",
-    description: "Pour les universités et réseaux",
+    price: "399+",
+    tagline: "Universités & réseaux",
+    cta: "Parler à l'équipe",
     features: [
-      "Tout du plan Pro",
-      "API publique",
-      "SSO (SAML, OIDC)",
-      "SLA 99,9%",
-      "Accompagnement dédié",
-      "Intégration LinkedIn",
+      "Tout Pro, plus :",
+      "API publique + SSO",
+      "SLA 99,9 % garanti",
+      "IA V1.0 : scoring, traduction",
+      "Ancrage blockchain Polygon",
+      "Multi-établissements",
+      "CSM dédié",
     ],
-    cta: "Nous contacter",
-    highlighted: false,
+    highlight: false,
   },
 ];
 
 export default function PricingSection() {
-  return (
-    <section id="tarifs" className="py-24 lg:py-32 bg-white relative">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.5 }}
-          className="text-center mb-16"
-        >
-          <span className="inline-block text-sm font-semibold text-cta uppercase tracking-wider mb-3">
-            Tarifs
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-primary tracking-tight mb-4">
-            Un prix adapté à{" "}
-            <span className="gradient-text">chaque établissement.</span>
-          </h2>
-          <p className="text-lg text-text-muted max-w-2xl mx-auto leading-relaxed">
-            Rentable dès 2 écoles Starter. Pas de frais cachés. Les beta-testeurs 
-            bénéficient de 3 mois gratuits.
-          </p>
-        </motion.div>
+  const rootRef = useRef<HTMLElement>(null);
 
-        {/* Pricing cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-          {tiers.map((tier, i) => (
-            <motion.div
-              key={tier.name}
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-40px" }}
-              transition={{ delay: i * 0.1, duration: 0.5, ease: "easeOut" }}
-              className={`relative rounded-2xl p-7 border flex flex-col ${
-                tier.highlighted
-                  ? "bg-primary border-primary-light shadow-soft-xl ring-2 ring-cta/20"
-                  : "bg-white border-border shadow-soft-sm card-hover"
+  useGSAP(
+    () => {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce) return;
+
+      gsap.from("[data-plan]", {
+        y: 40, opacity: 0, scale: 0.98,
+        duration: 0.8, stagger: 0.12, ease: "power3.out",
+        scrollTrigger: { trigger: rootRef.current, start: "top 75%" },
+      });
+      gsap.from("[data-price-title]", {
+        y: 20, opacity: 0, duration: 0.7, ease: "power3.out",
+        scrollTrigger: { trigger: rootRef.current, start: "top 80%" },
+      });
+    },
+    { scope: rootRef }
+  );
+
+  return (
+    <section
+      ref={rootRef}
+      id="tarifs"
+      className="relative py-28 md:py-36 overflow-hidden"
+    >
+      <div
+        aria-hidden
+        className="absolute top-0 right-0 w-[420px] h-[420px] rounded-full animate-float-slower"
+        style={{
+          background: "radial-gradient(circle, rgba(79,70,229,0.18), transparent 70%)",
+          filter: "blur(48px)",
+        }}
+      />
+
+      <div className="relative max-w-6xl mx-auto px-6">
+        <div data-price-title className="max-w-3xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 neumorph-pill rounded-full px-3.5 py-1.5 text-xs font-semibold text-ink-soft mb-5">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+            Tarifs transparents
+          </div>
+          <h2 className="font-display font-bold text-ink tracking-tight text-4xl md:text-5xl leading-[1.05]">
+            Trois offres, <span className="grad-text">une seule cryptographie</span>.
+          </h2>
+          <p className="mt-5 text-lg text-muted">
+            Le cœur sécurité est identique à tous les niveaux. Vous payez
+            l&apos;échelle, l&apos;IA et l&apos;intégration.
+          </p>
+        </div>
+
+        <div className="mt-14 grid md:grid-cols-3 gap-5 items-stretch">
+          {plans.map((p) => (
+            <article
+              key={p.name}
+              data-plan
+              className={`relative rounded-[1.75rem] p-7 flex flex-col lift ${
+                p.highlight
+                  ? "glass-strong md:-translate-y-4 ring-1 ring-indigo-200/70"
+                  : "glass"
               }`}
             >
-              {/* Popular badge */}
-              {tier.highlighted && (
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                  <div className="flex items-center gap-1.5 px-4 py-1.5 bg-cta text-white text-xs font-bold rounded-full shadow-soft">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Le plus populaire
+              {p.highlight && (
+                <>
+                  <div className="absolute -inset-0.5 rounded-[1.85rem] grad-ring opacity-30 blur-md animate-spin-slower -z-10" aria-hidden />
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 grad-ring text-[11px] font-bold text-white px-3 py-1 rounded-full shadow-lg uppercase tracking-wider">
+                    {p.badge}
                   </div>
-                </div>
+                </>
               )}
 
-              <div className="mb-6">
-                <h3
-                  className={`text-lg font-bold mb-1 ${
-                    tier.highlighted ? "text-white" : "text-primary"
-                  }`}
-                >
-                  {tier.name}
-                </h3>
-                <p
-                  className={`text-sm ${
-                    tier.highlighted ? "text-slate-400" : "text-text-muted"
-                  }`}
-                >
-                  {tier.description}
-                </p>
+              <div>
+                <div className="font-display font-semibold text-muted uppercase tracking-wider text-xs">
+                  {p.name}
+                </div>
+                <div className="mt-3 flex items-baseline gap-1">
+                  <span className="font-display font-bold text-ink text-5xl md:text-6xl tracking-tight">
+                    {p.price} €
+                  </span>
+                  <span className="text-sm text-muted">/ mois</span>
+                </div>
+                <p className="mt-1 text-sm text-muted">{p.tagline}</p>
               </div>
 
-              <div className="mb-6">
-                <div className="flex items-baseline gap-1">
-                  <span
-                    className={`text-4xl font-extrabold ${
-                      tier.highlighted ? "text-white" : "text-primary"
-                    }`}
-                  >
-                    {tier.price}€
-                  </span>
-                  {tier.suffix && (
+              <ul className="mt-6 space-y-2.5 flex-1">
+                {p.features.map((f) => (
+                  <li key={f} className="flex items-start gap-2.5 text-sm">
                     <span
-                      className={`text-xl font-bold ${
-                        tier.highlighted ? "text-slate-400" : "text-text-subtle"
+                      className={`shrink-0 mt-0.5 w-5 h-5 rounded-full grid place-items-center ${
+                        p.highlight
+                          ? "bg-linear-to-br from-indigo-600 to-indigo-500 text-white"
+                          : "bg-indigo-100 text-indigo-600"
                       }`}
                     >
-                      {tier.suffix}
+                      <Check className="w-3 h-3" strokeWidth={3} />
                     </span>
-                  )}
-                  <span
-                    className={`text-sm ${
-                      tier.highlighted ? "text-slate-400" : "text-text-subtle"
-                    }`}
-                  >
-                    / mois
-                  </span>
-                </div>
-              </div>
-
-              <ul className="space-y-3 mb-8 flex-1">
-                {tier.features.map((feature) => (
-                  <li
-                    key={feature}
-                    className={`flex items-start gap-2.5 text-sm ${
-                      tier.highlighted ? "text-slate-300" : "text-text-muted"
-                    }`}
-                  >
-                    <Check
-                      className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
-                        tier.highlighted ? "text-cta" : "text-success"
-                      }`}
-                      strokeWidth={2.5}
-                    />
-                    {feature}
+                    <span className="text-ink-soft">{f}</span>
                   </li>
                 ))}
               </ul>
 
               <a
-                href="#waitlist"
-                className={`block text-center px-5 py-3 rounded-xl font-semibold text-sm transition-all duration-200 cursor-pointer ${
-                  tier.highlighted
-                    ? "bg-cta hover:bg-cta-hover text-white shadow-soft glow-cta"
-                    : "bg-surface hover:bg-border-light text-primary border border-border"
+                href="#cta"
+                className={`mt-7 cursor-pointer inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full font-semibold text-sm transition-colors ${
+                  p.highlight
+                    ? "cta-primary"
+                    : "cta-ghost"
                 }`}
               >
-                {tier.cta}
+                {p.cta}
+                <ArrowRight className="w-3.5 h-3.5" />
               </a>
-            </motion.div>
+            </article>
           ))}
         </div>
+
+        <p className="mt-10 text-center text-sm text-muted">
+          Tous les plans incluent le certificat PKI signé par CertifyChain,
+          TLS 1.3, RGPD et l&apos;audit log légal.
+        </p>
       </div>
     </section>
   );

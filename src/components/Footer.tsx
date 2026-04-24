@@ -1,68 +1,103 @@
-import { Shield } from "lucide-react";
+import { ShieldCheck, Twitter, Linkedin, Github } from "lucide-react";
 
-const footerLinks = {
-  Produit: [
-    { label: "Fonctionnalités", href: "#fonctionnalites" },
-    { label: "Tarifs", href: "#tarifs" },
-    { label: "Sécurité", href: "#fonctionnement" },
-    { label: "Roadmap", href: "#" },
-  ],
-  Ressources: [
-    { label: "Documentation", href: "#" },
-    { label: "Blog", href: "#" },
-    { label: "API", href: "#" },
-    { label: "Status", href: "#" },
-  ],
-  Légal: [
-    { label: "Mentions légales", href: "#" },
-    { label: "CGU", href: "#" },
-    { label: "Politique de confidentialité", href: "#" },
-    { label: "RGPD", href: "#" },
-  ],
-};
+const columns = [
+  {
+    title: "Produit",
+    links: [
+      { label: "Pour les écoles", href: "#ecoles" },
+      { label: "Principe ZKP", href: "#securite" },
+      { label: "Tarifs", href: "#tarifs" },
+      { label: "Fonctionnalités IA", href: "#ia" },
+    ],
+  },
+  {
+    title: "Ressources",
+    links: [
+      { label: "Documentation", href: "#" },
+      { label: "API publique", href: "#" },
+      { label: "Registre émetteurs", href: "#" },
+      { label: "Blog", href: "#" },
+    ],
+  },
+  {
+    title: "Entreprise",
+    links: [
+      { label: "À propos", href: "#" },
+      { label: "Sécurité", href: "#securite" },
+      { label: "RGPD", href: "#" },
+      { label: "Contact", href: "#cta" },
+    ],
+  },
+];
 
 export default function Footer() {
   return (
-    <footer className="bg-primary border-t border-white/5">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-12">
-          {/* Brand */}
-          <div className="md:col-span-2">
-            <a href="#" className="flex items-center gap-2.5 mb-4 cursor-pointer">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cta to-accent flex items-center justify-center">
-                <Shield className="w-5 h-5 text-white" strokeWidth={2.5} />
-              </div>
-              <span className="text-xl font-bold text-white tracking-tight">
-                Certify<span className="text-cta">Chain</span>
-              </span>
-            </a>
-            <p className="text-sm text-slate-400 leading-relaxed max-w-xs mb-4">
-              Rendez la fraude aux diplômes techniquement impossible. 
-              Diplômes numériques authentifiés par cryptographie Zero-Knowledge.
-            </p>
-            <p className="text-xs text-slate-500">
-              © {new Date().getFullYear()} CertifyChain. Tous droits réservés.
-            </p>
+    <footer className="relative mt-10 border-t border-hairline">
+      <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-indigo-500/50 to-transparent" />
+      <div className="max-w-6xl mx-auto px-6 py-16 grid md:grid-cols-12 gap-10">
+        <div className="md:col-span-5">
+          <div className="flex items-center gap-2.5">
+            <span className="grid place-items-center w-10 h-10 rounded-xl bg-linear-to-br from-indigo-600 to-indigo-500 text-white shadow-[0_8px_20px_-8px_rgba(79,70,229,0.55)]">
+              <ShieldCheck className="w-5 h-5" strokeWidth={2.2} />
+            </span>
+            <span className="font-display font-bold text-ink text-xl tracking-tight">
+              Certify<span className="grad-text-cool">Chain</span>
+            </span>
           </div>
+          <p className="mt-5 text-sm text-muted max-w-sm leading-relaxed">
+            Plateforme SaaS B2B de délivrance et vérification de diplômes via
+            preuves Zero-Knowledge. Pour un monde où la fraude aux diplômes
+            devient techniquement impossible.
+          </p>
+          <div className="mt-6 flex items-center gap-2">
+            {[
+              { Icon: Twitter, label: "Twitter" },
+              { Icon: Linkedin, label: "LinkedIn" },
+              { Icon: Github, label: "GitHub" },
+            ].map(({ Icon, label }) => (
+              <a
+                key={label}
+                href="#"
+                aria-label={label}
+                className="w-10 h-10 rounded-full neumorph-pill grid place-items-center text-muted hover:text-indigo-600 transition-colors cursor-pointer"
+              >
+                <Icon className="w-4 h-4" />
+              </a>
+            ))}
+          </div>
+        </div>
 
-          {/* Links */}
-          {Object.entries(footerLinks).map(([category, links]) => (
-            <div key={category}>
-              <h4 className="text-sm font-semibold text-white mb-4">{category}</h4>
+        <div className="md:col-span-7 grid grid-cols-2 md:grid-cols-3 gap-6">
+          {columns.map((c) => (
+            <div key={c.title}>
+              <div className="text-xs font-bold uppercase tracking-wider text-ink mb-4">
+                {c.title}
+              </div>
               <ul className="space-y-2.5">
-                {links.map((link) => (
-                  <li key={link.label}>
+                {c.links.map((l) => (
+                  <li key={l.label}>
                     <a
-                      href={link.href}
-                      className="text-sm text-slate-400 hover:text-white transition-colors duration-200 cursor-pointer"
+                      href={l.href}
+                      className="text-sm text-muted hover:text-ink transition-colors cursor-pointer"
                     >
-                      {link.label}
+                      {l.label}
                     </a>
                   </li>
                 ))}
               </ul>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="border-t border-hairline">
+        <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-muted">
+          <span>© 2025 CertifyChain · Document propriétaire — diffusion restreinte.</span>
+          <div className="flex items-center gap-5">
+            <a href="#" className="hover:text-ink cursor-pointer">Conditions</a>
+            <a href="#" className="hover:text-ink cursor-pointer">Confidentialité</a>
+            <a href="#" className="hover:text-ink cursor-pointer">Cookies</a>
+          </div>
         </div>
       </div>
     </footer>

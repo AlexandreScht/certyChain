@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python scripts/search.py \"B2B SaaS education diploma verification cryptography trust security liquid glass neumorphism vivid\" --design-system -p \"CertifyChain\")",
+      "Bash(python scripts/search.py \"scroll animation parallax gsap\" --domain ux -n 5)",
+      "Bash(pnpm add *)",
+      "Bash(rm -rf .next)",
+      "Bash(pnpm dev *)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} · %{size_download} bytes · %{time_total}s\\\\n\" http://localhost:3000/)",
+      "Bash(pnpm remove *)",
+      "Bash(kill %1)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} · %{size_download} bytes · %{time_total}s\\\\n\" http://localhost:3001/)",
+      "Bash(curl -s http://localhost:3001/)",
+      "Bash(curl -s http://localhost:3001/ -o /tmp/ccpage.html)",
+      "Read(//tmp/**)",
+      "Bash(\"C:/nvm4w/nodejs/node.exe\" \"C:/nvm4w/nodejs/node_modules/npm/bin/npx-cli.js\" --version)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:22360/sse --max-time 3)",
+      "mcp__obsidian__get_workspace_files",
+      "mcp__obsidian__view",
+      "mcp__obsidian__str_replace"
+    ]
+  }
+}

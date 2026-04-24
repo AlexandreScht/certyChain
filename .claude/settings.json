@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "obsidian": {
+      "command": "C:\\nvm4w\\nodejs\\node.exe",
+      "args": [
+        "C:\\nvm4w\\nodejs\\node_modules\\npm\\bin\\npx-cli.js",
+        "mcp-remote",
+        "http://localhost:22360/sse"
+      ]
+    }
+  }
+}
