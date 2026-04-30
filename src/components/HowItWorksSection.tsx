@@ -93,6 +93,68 @@ const actors: Actor[] = [
   },
 ];
 
+type Tint = "indigo" | "cyan" | "magenta";
+
+const tintHex: Record<Tint, string> = {
+  indigo: "#6019BF", // indigo-400
+  cyan: "#3CF0EA",   // cyan-400
+  magenta: "#F03CE7", // pink-400
+};
+
+function FlowArrow({ from, to, index }: { from: Tint; to: Tint; index: number }) {
+  const fromColor = tintHex[from];
+  const toColor = tintHex[to];
+  const gid = `fg-${from}-${to}`;
+  const base = index * 2000;
+
+  return (
+    <div className="flex items-center justify-center shrink-0 py-1 lg:py-0 lg:w-10 xl:w-14 lg:self-center relative z-10">
+      {/* Mobile: 3 chevrons down — gradient top→bottom */}
+      <svg viewBox="0 0 20 52" className="lg:hidden h-14 w-5" fill="none" aria-hidden>
+        <defs>
+          <linearGradient id={`${gid}-v`} x1="0" y1="0" x2="0" y2="52" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor={fromColor} />
+            <stop offset="100%" stopColor={toColor} />
+          </linearGradient>
+        </defs>
+        {([0, 17, 34] as const).map((y, i) => (
+          <path
+            key={i}
+            d={`M3 ${y + 2} L10 ${y + 9} L17 ${y + 2}`}
+            stroke={`url(#${gid}-v)`}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="animate-arrow-wave"
+            style={{ animationDelay: `${base + i * 240}ms` }}
+          />
+        ))}
+      </svg>
+      {/* Desktop: 3 chevrons right — gradient left→right */}
+      <svg viewBox="0 0 52 20" className="hidden lg:block w-full h-5 translate-x-1" fill="none" aria-hidden>
+        <defs>
+          <linearGradient id={`${gid}-h`} x1="0" y1="0" x2="52" y2="0" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor={fromColor} />
+            <stop offset="100%" stopColor={toColor} />
+          </linearGradient>
+        </defs>
+        {([0, 17, 34] as const).map((x, i) => (
+          <path
+            key={i}
+            d={`M${x + 2} 3 L${x + 9} 10 L${x + 2} 17`}
+            stroke={`url(#${gid}-h)`}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="animate-arrow-wave"
+            style={{ animationDelay: `${base + i * 240}ms` }}
+          />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 const tintClasses: Record<string, { chip: string; icon: string; dot: string; ring: string; bgGrad: string }> = {
   indigo: {
     chip: "bg-indigo-100 text-indigo-600",
@@ -140,7 +202,7 @@ export default function HowItWorksSection() {
         },
       });
 
-      // Animate SVG path connector
+      // Animate SVG path connector — span the entire visible window of the section
       const path = document.querySelector<SVGPathElement>("#flow-path");
       if (path) {
         const length = path.getTotalLength();
@@ -150,9 +212,9 @@ export default function HowItWorksSection() {
           ease: "none",
           scrollTrigger: {
             trigger: rootRef.current,
-            start: "top 0%",
-            end: "bottom 92%",
-            scrub: 0.4,
+            start: "top 70%",   // begins as section enters viewport
+            end: "bottom 70%",  // completes as section exits — large range = smooth on any screen size
+            scrub: 0.8,
           },
         });
       }
@@ -193,14 +255,14 @@ export default function HowItWorksSection() {
         }}
       />
 
-      <div className="relative max-w-6xl mx-auto px-6">
+      <div className="relative max-w-6xl xl:max-w-7xl mx-auto px-6 xl:px-10">
         <div data-title className="max-w-3xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 neumorph-pill rounded-full px-3.5 py-1.5 text-xs font-semibold text-ink-soft mb-5">
             <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
             Le principe
           </div>
           <h2 className="font-display font-bold text-ink tracking-tight text-4xl md:text-5xl leading-[1.05]">
-            Un flux asynchrone, <span className="grad-text-cool">trois acteurs</span>, une seule vérité cryptographique.
+            Un flux asynchrone, <span className="grad-text-cool">trois acteurs</span>, une seule vérité cryptographique
           </h2>
           <p className="mt-5 text-lg text-muted">
             L&apos;école émet, l&apos;élève partage, le recruteur vérifie. Aucun acteur n&apos;a
@@ -209,7 +271,7 @@ export default function HowItWorksSection() {
         </div>
 
         {/* Flow connector SVG */}
-        <div aria-hidden className="relative mt-16">
+        <div aria-hidden className="relative mt-18">
           <svg
             className="absolute inset-x-0 -top-6 w-full h-24 hidden lg:block pointer-events-none"
             viewBox="0 0 1200 100"
@@ -243,12 +305,13 @@ export default function HowItWorksSection() {
           </svg>
         </div>
 
-        <div className="relative grid lg:grid-cols-3 gap-6 mt-10 items-start">
-          {actors.map((actor, i) => {
+        <div className="relative flex flex-col lg:flex-row mt-2 gap-4 lg:gap-0 lg:items-start">
+          {actors.flatMap((actor, i) => {
             const Icon = actor.icon;
             const c = tintClasses[actor.tint];
             const isFocus = actor.focus;
-            return (
+
+            const card = (
               <article
                 key={actor.id}
                 data-actor
@@ -260,23 +323,21 @@ export default function HowItWorksSection() {
                   e.currentTarget.style.setProperty("--my", `${y}px`);
                 }}
                 className={cn(
-                  "hover-glow relative rounded-[1.75rem] p-7 lift",
-                  isFocus ? "lg:scale-105 lg:-translate-y-2 ring-1 ring-indigo-200/60 glass-strong" : "glass"
+                  "hover-glow relative rounded-[1.75rem] p-7 xl:p-9 lift flex-1 min-w-0",
+                  isFocus ? "lg:scale-105 xl:scale-[1.07] lg:-translate-y-6 ring-1 ring-indigo-200/60 glass-strong z-20" : "glass lg:mt-10"
                 )}
               >
                 <div className={cn('absolute inset-0 rounded-[1.75rem] pointer-events-none', c.bgGrad)} />
 
                 <div className="relative z-10 flex items-start gap-3">
-                  <div
-                    className={`w-12 h-12 rounded-2xl bg-linear-to-br ${c.icon} text-white grid place-items-center shadow-[0_10px_24px_-10px_rgba(79,70,229,0.55)]`}
-                  >
+                  <div className={`w-12 h-12 rounded-2xl bg-linear-to-br ${c.icon} text-white grid place-items-center shadow-[0_10px_24px_-10px_rgba(79,70,229,0.55)]`}>
                     <Icon className="w-5.5 h-5.5" strokeWidth={2.1} />
                   </div>
                   <div className="flex-1">
                     <div className="text-[11px] uppercase tracking-wider font-semibold text-muted-soft">
                       Étape {i + 1}
                     </div>
-                    <h3 className="font-display font-bold text-ink text-xl leading-tight">
+                    <h3 className="font-display font-bold text-ink text-lg xl:text-xl leading-tight whitespace-nowrap">
                       {actor.title}
                     </h3>
                     <p className="text-xs text-muted mt-0.5">{actor.role}</p>
@@ -288,16 +349,14 @@ export default function HowItWorksSection() {
                     const PIcon = p.icon;
                     return (
                       <li key={p.title} className="flex gap-3">
-                        <div
-                          className={`shrink-0 w-8 h-8 rounded-xl ${c.chip} grid place-items-center ring-1 ${c.ring}`}
-                        >
+                        <div className={`shrink-0 w-8 h-8 rounded-xl ${c.chip} grid place-items-center ring-1 ${c.ring}`}>
                           <PIcon className="w-4 h-4" strokeWidth={2.2} />
                         </div>
                         <div>
-                          <div className="text-sm font-semibold text-ink leading-tight">
+                          <div className="text-sm xl:text-base font-semibold text-ink leading-tight">
                             {p.title}
                           </div>
-                          <p className="text-xs text-muted leading-relaxed mt-0.5">
+                          <p className="text-xs xl:text-sm text-muted leading-relaxed mt-0.5">
                             {p.desc}
                           </p>
                         </div>
@@ -317,6 +376,10 @@ export default function HowItWorksSection() {
                 )}
               </article>
             );
+
+            return i === 0
+              ? [card]
+              : [<FlowArrow key={`arrow-${i}`} from={actors[i - 1].tint} to={actor.tint} index={i - 1} />, card];
           })}
         </div>
       </div>

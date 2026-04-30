@@ -75,13 +75,15 @@ export default function ProblemSection() {
         });
       });
 
-      gsap.from("[data-card]", {
-        y: 32,
-        opacity: 0,
+      gsap.set("[data-card]", { y: 32, opacity: 0 });
+      gsap.to("[data-card]", {
+        y: 0,
+        opacity: 1,
         duration: 0.8,
         stagger: 0.12,
         ease: "power3.out",
-        scrollTrigger: { trigger: rootRef.current, start: "top 75%" },
+        clearProps: "transform,opacity",
+        scrollTrigger: { trigger: rootRef.current, start: "top 75%", once: true },
       });
 
       gsap.from("[data-eyebrow]", {
@@ -118,7 +120,7 @@ export default function ProblemSection() {
           </div>
           <h2 className="font-display font-bold text-ink tracking-tight text-4xl md:text-5xl leading-[1.05]">
             La fraude aux diplômes coûte cher.{" "}
-            <span className="grad-text">La vérification, encore plus.</span>
+            <span className="grad-text">La vérification, encore plus !</span>
           </h2>
           <p className="mt-5 text-lg text-muted max-w-2xl">
             Entre les CV mensongers, les appels interminables aux services
@@ -141,7 +143,7 @@ export default function ProblemSection() {
                   e.currentTarget.style.setProperty("--mx", `${x}px`);
                   e.currentTarget.style.setProperty("--my", `${y}px`);
                 }}
-                className="hover-glow glass glass-sheen rounded-3xl p-7 lift group"
+                className="hover-glow glass glass-sheen rounded-3xl p-7 lift group flex flex-col"
               >
                 <div
                   className={`w-12 h-12 rounded-2xl bg-linear-to-br ${tintMap[s.tint]} grid place-items-center mb-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]`}
@@ -157,10 +159,10 @@ export default function ProblemSection() {
                     {s.prefix}0{s.suffix}
                   </span>
                 </div>
-                <div className="mt-4 font-display font-semibold text-ink text-lg leading-snug">
+                <div className="mt-4 font-display font-semibold text-ink text-lg leading-snug flex-1">
                   {s.title}
                 </div>
-                <p className="mt-1.5 text-sm text-muted leading-relaxed">{s.desc}</p>
+                <p className="mt-4 text-sm text-muted leading-relaxed">{s.desc}</p>
               </div>
             );
           })}
