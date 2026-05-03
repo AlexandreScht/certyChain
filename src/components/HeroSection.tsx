@@ -42,7 +42,7 @@ export default function HeroSection() {
         const ry = ((tx - cx) / cx) * 8;
         cancelAnimationFrame(rafId);
         rafId = requestAnimationFrame(() => {
-          card.style.transform = `perspective(1100px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+          card.style.transform = `perspective(1100px) rotateX(${rx}deg) rotateY(${ry}deg) scale(var(--card-scale, 1))`;
         });
       }
       if (glow) {
@@ -55,7 +55,7 @@ export default function HeroSection() {
       }
     };
     const onLeave = () => {
-      if (card) card.style.transform = `perspective(1100px) rotateX(0deg) rotateY(0deg)`;
+      if (card) card.style.transform = `perspective(1100px) rotateX(0deg) rotateY(0deg) scale(var(--card-scale, 1))`;
       if (paraOverlayRef.current) {
         paraOverlayRef.current.style.setProperty('--mx', '-500px');
         paraOverlayRef.current.style.setProperty('--my', '-500px');
@@ -74,7 +74,7 @@ export default function HeroSection() {
     <section
       ref={rootRef}
       id="top"
-      className="relative min-h-svh pt-32 pb-20 md:pb-28 bg-mesh noise overflow-hidden"
+      className="relative min-h-svh lg:h-screen flex flex-col justify-center pt-32 pb-20 md:pb-28 lg:py-0 bg-mesh noise overflow-hidden"
     >
       {/* Floating orbs — looping */}
       <div
@@ -115,14 +115,14 @@ export default function HeroSection() {
         className="absolute inset-0 bg-dots opacity-40 [mask-radial-gradient(ellipse_60%_50%_at_50%_40%,black,transparent_80%)]"
       />
 
-      <div className="relative max-w-6xl mx-auto px-6 grid lg:grid-cols-12 gap-10 items-center">
+      <div className="relative w-full max-w-[1400px] mx-auto px-6 md:px-10 grid lg:grid-cols-12 gap-10 xl:gap-16 items-center">
         {/* LEFT — copy */}
         <div className="lg:col-span-7 z-10">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: "easeOut" }}
-            className="inline-flex items-center gap-2 glass rounded-full px-3.5 py-1.5 text-xs font-medium text-ink-soft mb-6"
+            className="inline-flex items-center gap-2 glass rounded-full px-[clamp(0.75rem,1.5vw,1rem)] py-[clamp(0.3rem,1vh,0.5rem)] text-[clamp(0.7rem,1.5vh,0.85rem)] font-medium text-ink-soft mb-[clamp(1rem,3vh,2rem)]"
           >
             <span className="relative flex w-2 h-2">
               <span className="absolute inset-0 rounded-full bg-lime-500 animate-pulse-ring" />
@@ -136,7 +136,7 @@ export default function HeroSection() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
-            className="font-display font-bold text-ink tracking-tight leading-[1.02] text-[clamp(2rem,5vw,4rem)]"
+            className="font-display font-bold text-ink tracking-tight leading-[1.05] text-[clamp(2.5rem,min(6vw,8vh),5.5rem)]"
           >
             Vos diplômes,{" "}
             <span className="grad-text">infalsifiables</span>
@@ -150,9 +150,9 @@ export default function HeroSection() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
-            className="relative mt-6 max-w-[60ch]"
+            className="relative mt-[clamp(1rem,3vh,2rem)] max-w-[65ch]"
           >
-            <p className="font-elegant text-lg md:text-[1.25rem] text-muted leading-[1.75] tracking-wide">
+            <p className="font-elegant text-[clamp(1rem,min(1.5vw,2vh),1.35rem)] text-muted leading-[1.75] tracking-wide">
               CertifyChain émet et vérifie vos diplômes numériques via preuves à divulgation
               nulle (ZKP). Pour les écoles : un portail d&apos;émission sécurisé, un
               certificat PKI officiel et une vérification instantanée — sans ressaisie, sans
@@ -161,7 +161,7 @@ export default function HeroSection() {
             <p
               ref={paraOverlayRef}
               aria-hidden
-              className="absolute inset-0 font-elegant text-lg md:text-[1.25rem] text-indigo-500 leading-[1.75] tracking-wide pointer-events-none select-none"
+              className="absolute inset-0 font-elegant text-[clamp(1rem,min(1.5vw,2vh),1.35rem)] text-indigo-500 leading-[1.75] tracking-wide pointer-events-none select-none"
               style={{
                 '--mx': '-500px',
                 '--my': '-500px',
@@ -180,18 +180,18 @@ export default function HeroSection() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease: "easeOut", delay: 0.3 }}
-            className="mt-9 flex flex-wrap items-center gap-3"
+            className="mt-[clamp(1.5rem,4vh,3rem)] flex flex-wrap items-center gap-[clamp(0.75rem,2vw,1.5rem)]"
           >
             <a
               href="#cta"
-              className="cta-primary cursor-pointer px-6 py-3.5 rounded-full font-semibold inline-flex items-center gap-2 group"
+              className="cta-primary cursor-pointer px-[clamp(1.25rem,2vw,2rem)] py-[clamp(0.75rem,1.5vh,1rem)] text-[clamp(0.9rem,1.2vw,1.1rem)] rounded-full font-semibold inline-flex items-center gap-2 group"
             >
               Certifier mon institution
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+              <ArrowRight className="w-[clamp(1rem,1.5vw,1.25rem)] h-[clamp(1rem,1.5vw,1.25rem)] transition-transform group-hover:translate-x-1" />
             </a>
             <a
               href="#principe"
-              className="cta-ghost cursor-pointer px-6 py-3.5 rounded-full font-semibold inline-flex items-center gap-2"
+              className="cta-ghost cursor-pointer px-[clamp(1.25rem,2vw,2rem)] py-[clamp(0.75rem,1.5vh,1rem)] text-[clamp(0.9rem,1.2vw,1.1rem)] rounded-full font-semibold inline-flex items-center gap-2"
             >
               Voir le fonctionnement
             </a>
@@ -202,7 +202,7 @@ export default function HeroSection() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.8, delay: 0.5 }}
-            className="mt-10 grid grid-cols-3 gap-3 max-w-xl"
+            className="mt-[clamp(1.5rem,5vh,3.5rem)] grid grid-cols-3 gap-[clamp(0.5rem,1.5vw,1rem)] max-w-2xl"
           >
             {[
               { kpi: "< 2s", label: "preuve ZKP" },
@@ -211,23 +211,23 @@ export default function HeroSection() {
             ].map((x) => (
               <div
                 key={x.label}
-                className="neumorph-sm rounded-2xl px-4 py-3 text-left"
+                className="neumorph-sm rounded-2xl px-[clamp(0.75rem,1.5vw,1.25rem)] py-[clamp(0.5rem,1.5vh,1rem)] text-left"
               >
-                <div className="font-display font-bold text-ink text-xl md:text-2xl leading-none">
+                <div className="font-display font-bold text-ink text-[clamp(1.1rem,min(2vw,3vh),1.75rem)] leading-none">
                   {x.kpi}
                 </div>
-                <div className="text-xs text-muted mt-1">{x.label}</div>
+                <div className="text-[clamp(0.65rem,min(1vw,1.5vh),0.85rem)] text-muted mt-[clamp(0.1rem,0.5vh,0.3rem)]">{x.label}</div>
               </div>
             ))}
           </motion.div>
         </div>
 
         {/* RIGHT — animated diploma card */}
-        <div className="lg:col-span-5 z-10 flex justify-center lg:justify-end">
+        <div className="lg:col-span-5 z-10 flex justify-center lg:justify-end lg:pl-10">
           <div
             ref={cardRef}
-            className="relative tilt-3d w-full max-w-[420px]"
-            style={{ transform: "perspective(1100px)" }}
+            className="relative tilt-3d w-full max-w-[420px] origin-center lg:origin-right [--card-scale:1] lg:[--card-scale:1.05] xl:[--card-scale:1.25] 2xl:[--card-scale:1.4] [@media(max-height:850px)]:lg:[--card-scale:1] [@media(max-height:750px)]:lg:[--card-scale:0.9] [@media(max-height:650px)]:lg:[--card-scale:0.75]"
+            style={{ transform: "perspective(1100px) rotateX(0deg) rotateY(0deg) scale(var(--card-scale, 1))" }}
           >
             {/* Rotating conic ring */}
             <div className="absolute -inset-3 rounded-4xl opacity-60 blur-md animate-spin-slower grad-ring" aria-hidden />
@@ -272,7 +272,7 @@ export default function HeroSection() {
 
                 <div className="grid grid-cols-3 gap-2 mt-4">
                   {[
-                    { l: "Titulaire", v: "A. Schecht" },
+                    { l: "Titulaire", v: "A. Dubois" },
                     { l: "ID", v: "UUIDv4" },
                     { l: "Émis le", v: "2025-07-03" },
                   ].map((x) => (
@@ -332,12 +332,33 @@ export default function HeroSection() {
       </div>
 
       {/* Scroll hint */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-xs text-muted-soft flex flex-col items-center gap-1">
-        <div className="w-6 h-10 rounded-full border border-hairline relative">
-          <span className="absolute left-1/2 top-2 -translate-x-1/2 w-1 h-2 rounded-full bg-indigo-500 animate-pulse-soft" />
+      <motion.a
+        href="#probleme"
+        initial={{ opacity: 0, x: "-50%", y: -15 }}
+        animate={{ opacity: 1, x: "-50%", y: 0 }}
+        transition={{ duration: 0.8, delay: 0.8, ease: "easeOut" }}
+        className="absolute bottom-3 left-1/2 flex flex-col items-center gap-2 z-20 group"
+      >
+        <div className="w-[26px] h-[42px] rounded-full border-2 border-indigo-500/20 glass flex justify-center pt-1.5">
+          <motion.div
+            animate={{
+              y: [0, 10, 18],
+              opacity: [0, 1, 0],
+            }}
+            transition={{
+              duration: 3,
+              repeat: Infinity,
+              ease: "easeInOut",
+              times: [0, 0.4, 1],
+              repeatDelay: 0.5
+            }}
+            className="w-1 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_6px_rgba(99,102,241,0.8)]"
+          />
         </div>
-        <span>Scrollez pour découvrir</span>
-      </div>
+        <span className="text-[10px] md:text-[11px] font-semibold text-muted-soft uppercase tracking-wider group-hover:text-indigo-500 transition-colors">
+          Scrollez pour découvrir
+        </span>
+      </motion.a>
     </section>
   );
 }
