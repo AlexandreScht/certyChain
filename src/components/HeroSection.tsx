@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -182,13 +183,13 @@ export default function HeroSection() {
             transition={{ duration: 0.7, ease: "easeOut", delay: 0.3 }}
             className="mt-[clamp(1.5rem,4vh,3rem)] flex flex-wrap items-center gap-[clamp(0.75rem,2vw,1.5rem)]"
           >
-            <a
-              href="#cta"
+            <Link
+              href="/ecole/register"
               className="cta-primary cursor-pointer px-[clamp(1.25rem,2vw,2rem)] py-[clamp(0.75rem,1.5vh,1rem)] text-[clamp(0.9rem,1.2vw,1.1rem)] rounded-full font-semibold inline-flex items-center gap-2 group"
             >
               Certifier mon institution
               <ArrowRight className="w-[clamp(1rem,1.5vw,1.25rem)] h-[clamp(1rem,1.5vw,1.25rem)] transition-transform group-hover:translate-x-1" />
-            </a>
+            </Link>
             <a
               href="#principe"
               className="cta-ghost cursor-pointer px-[clamp(1.25rem,2vw,2rem)] py-[clamp(0.75rem,1.5vh,1rem)] text-[clamp(0.9rem,1.2vw,1.1rem)] rounded-full font-semibold inline-flex items-center gap-2"
@@ -276,7 +277,7 @@ export default function HeroSection() {
                     { l: "ID", v: "UUIDv4" },
                     { l: "Émis le", v: "2025-07-03" },
                   ].map((x) => (
-                    <div key={x.l} className="rounded-xl bg-white/70 backdrop-blur px-3 py-2 border border-white/70">
+                    <div key={x.l} className="rounded-xl bg-white/70 dark:bg-white/5 backdrop-blur px-3 py-2 border border-white/70 dark:border-white/10">
                       <div className="text-[10px] uppercase tracking-wider text-muted-soft">
                         {x.l}
                       </div>

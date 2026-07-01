@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ShieldCheck, Menu, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useTheme } from "@/hooks/useTheme";
+import ThemeToggle from "@/components/ui/ThemeToggle";
 
 const links = [
   { label: "Principe", href: "#principe" },
@@ -14,6 +17,18 @@ const links = [
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
+  // Glass tints are JS-driven (Framer animate), so they must follow the theme.
+  const navBg = {
+    top: isDark
+      ? "linear-gradient(135deg, rgba(48,55,98,0.72) 0%, rgba(20,25,52,0.50) 100%)"
+      : "linear-gradient(135deg, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.42) 100%)",
+    minify: isDark
+      ? "linear-gradient(135deg, rgba(56,64,112,0.45) 0%, rgba(26,31,62,0.20) 100%)"
+      : "linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.05) 100%)",
+  };
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -38,14 +53,17 @@ export default function Navbar() {
       className="fixed top-0 left-0 right-0 z-50 flex justify-center w-full pointer-events-none"
     >
       <motion.nav
+        // No mount animation for the bar itself: it must paint at full width
+        // immediately (SSR + first frame). Without this, Framer animates `width`
+        // from the content width up to 100% on load → a brief "narrow bar" flash.
+        // Scroll-driven minify transitions below still animate normally.
+        initial={false}
         animate={{
           width: isMinify ? "85vw" : "100%",
           maxWidth: isMinify ? "72rem" : "100%",
           y: isMinify ? 16 : 0,
           borderRadius: isMinify ? "9999px" : "0px",
-          backgroundImage: isMinify 
-            ? "linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.05) 100%)"
-            : "linear-gradient(135deg, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.42) 100%)",
+          backgroundImage: isMinify ? navBg.minify : navBg.top,
         }}
         transition={springConfig}
         className={`pointer-events-auto relative px-4 md:px-6 py-2.5 transition-[background-color,border-color,box-shadow,backdrop-filter] duration-500 overflow-hidden backdrop-blur-md ${
@@ -78,7 +96,7 @@ export default function Navbar() {
                   className="relative px-3.5 py-1.5 text-sm font-medium text-muted hover:text-ink rounded-full transition-colors cursor-pointer"
                 >
                   <span className="relative z-10">{l.label}</span>
-                  <span className="absolute inset-0 rounded-full bg-white/0 hover:bg-white/60 transition-colors" />
+                  <span className="absolute inset-0 rounded-full bg-white/0 hover:bg-white/60 dark:hover:bg-white/10 transition-colors" />
                 </a>
               </li>
             ))}
@@ -86,29 +104,33 @@ export default function Navbar() {
 
           {/* Right Actions */}
           <div className="hidden md:flex items-center gap-2 ml-auto shrink-0">
-            <a
-              href="#demo"
+            <ThemeToggle />
+            <Link
+              href="/ecole/login"
               className="text-sm font-medium text-muted hover:text-ink px-3 py-1.5 rounded-full transition-colors cursor-pointer"
             >
               Connexion
-            </a>
-            <a
-              href="#cta"
+            </Link>
+            <Link
+              href="/ecole/register"
               className="cta-primary cursor-pointer text-sm font-semibold px-4 py-2 rounded-full"
             >
               Certifier mon école
-            </a>
+            </Link>
           </div>
 
-          {/* Mobile Menu Button */}
-          <button
-            className="md:hidden ml-auto neumorph-pill rounded-full w-10 h-10 grid place-items-center cursor-pointer shrink-0"
-            onClick={() => setOpen((v) => !v)}
-            aria-label={open ? "Fermer le menu" : "Ouvrir le menu"}
-            aria-expanded={open}
-          >
-            {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
+          {/* Mobile actions */}
+          <div className="md:hidden ml-auto flex items-center gap-2 shrink-0">
+            <ThemeToggle />
+            <button
+              className="neumorph-pill rounded-full w-10 h-10 grid place-items-center cursor-pointer"
+              onClick={() => setOpen((v) => !v)}
+              aria-label={open ? "Fermer le menu" : "Ouvrir le menu"}
+              aria-expanded={open}
+            >
+              {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
 
         {/* Animated Bottom Border (Only visible at top) */}
@@ -147,25 +169,32 @@ export default function Navbar() {
             exit={{ opacity: 0, y: -20 }}
             transition={springConfig}
             className="pointer-events-auto md:hidden absolute left-4 right-4 max-w-md mx-auto glass rounded-2xl p-4 flex flex-col gap-1 z-40 backdrop-blur-md"
-            style={{ backgroundImage: "linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.05) 100%)" }}
+            style={{ backgroundImage: navBg.minify }}
           >
             {links.map((l) => (
               <a
                 key={l.href}
                 href={l.href}
                 onClick={() => setOpen(false)}
-                className="px-4 py-3 rounded-xl hover:bg-white/60 font-medium text-ink cursor-pointer"
+                className="px-4 py-3 rounded-xl hover:bg-white/60 dark:hover:bg-white/10 font-medium text-ink cursor-pointer"
               >
                 {l.label}
               </a>
             ))}
-            <a
-              href="#cta"
+            <Link
+              href="/ecole/login"
+              onClick={() => setOpen(false)}
+              className="px-4 py-3 rounded-xl hover:bg-white/60 dark:hover:bg-white/10 font-medium text-ink cursor-pointer"
+            >
+              Connexion
+            </Link>
+            <Link
+              href="/ecole/register"
               onClick={() => setOpen(false)}
               className="cta-primary cursor-pointer text-sm font-semibold px-4 py-3 rounded-xl text-center mt-2"
             >
               Certifier mon école
-            </a>
+            </Link>
           </motion.div>
         )}
       </AnimatePresence>

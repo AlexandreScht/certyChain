@@ -1,3 +1,12 @@
+packages:
+  - "server"
+  - "admin"
+  - "wallet"
+
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+
+onlyBuiltDependencies:
+  - "@node-rs/argon2"
+  - esbuild

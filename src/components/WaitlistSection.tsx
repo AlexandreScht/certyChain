@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Link from "next/link";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -131,6 +132,16 @@ export default function WaitlistSection() {
                 </p>
               </form>
             )}
+
+            <p className="mt-5 text-sm text-muted">
+              Déjà décidé ?{" "}
+              <Link
+                href="/ecole/register"
+                className="font-semibold text-indigo-600 hover:text-indigo-500 underline underline-offset-4 decoration-indigo-300 transition-colors"
+              >
+                Créer mon espace établissement
+              </Link>
+            </p>
 
             <div className="mt-10 flex flex-wrap justify-center gap-x-8 gap-y-3 text-sm text-muted">
               {[

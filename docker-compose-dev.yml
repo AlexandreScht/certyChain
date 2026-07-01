@@ -1,0 +1,192 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CertifyChain — surcharge DÉVELOPPEMENT / TEST
+#
+#   Usage :  docker compose -f docker-compose.yml -f docker-compose-dev.yml up --build
+#   (option Stripe/postal :  ajouter  --profile postal )
+#
+# Ajoute, par-dessus la stack de prod (`docker-compose.yml`), TOUT l'outillage de
+# dev — qui ne doit JAMAIS être déployé :
+#   • mailpit         : boîte mail de dev (capture OTP + notifications)          → http://localhost:8025
+#   • pgweb           : navigateur de base de données                            → http://localhost:8081
+#   • proconnect-mock : faux fournisseur OIDC ProConnect (zéro signup DINUM)     → option ProConnect
+#   • dns-resolver    : CoreDNS qui sert une zone locale `ecole-test.fr`         → option DNS TXT
+#   • stripe-cli      : relaie les webhooks Stripe vers l'API (profil `postal`)  → option Postal
+#
+# … et repasse `db` + `server` en mode dev (DB publiée, cookies http://, mocks).
+#
+# ⚠️ DÉV / TEST UNIQUEMENT — ne JAMAIS déployer cette surcharge.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── Postgres : exposé à l'hôte pour l'outillage local (sinon interne) ────────
+  db:
+    networks: [backend, frontend]
+    ports:
+      - "5432:5432"
+
+  # ── API : mode développement + Mailpit + mocks de vérification ──────────────
+  server:
+    environment:
+      # Dev : cookies de session acceptés en http://localhost (sinon Secure forcé).
+      NODE_ENV: development
+      COOKIE_SECURE: "false"
+      # Pas de reverse proxy en local → ne pas faire confiance aux en-têtes XFF.
+      TRUST_PROXY: "false"
+      WEB_ORIGIN: http://localhost:3000
+      # ── Email → Mailpit (capture OTP + notifications) ───────────────────────
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      # ── ProConnect → mock local (rend l'option proposable + la fait réussir) ──
+      PROCONNECT_ISSUER: http://proconnect-mock:8090
+      PROCONNECT_CLIENT_ID: mock-client
+      PROCONNECT_CLIENT_SECRET: mock-secret
+      PROCONNECT_REDIRECT_URI: http://localhost:4000/verification/proconnect/callback
+      PROCONNECT_SCOPES: "openid siret given_name usual_name email"
+      # ── Stripe / INSEE (option Postal) viennent du .env (env_file). ──────────
+      #    Postal n'est PROPOSÉE que si STRIPE_SECRET_KEY *et* INSEE_API_KEY sont
+      #    renseignées dans .env (comptes de test gratuits) + l'école a un SIRET.
+    # Toutes les résolutions DNS de l'API passent par CoreDNS, qui sert
+    # `ecole-test.fr` localement et FORWARD tout le reste (db, mailpit, Stripe…)
+    # vers le DNS interne de Docker → rien d'autre n'est cassé.
+    dns:
+      - 172.29.7.53
+    networks: [backend, frontend, devdns]
+    depends_on:
+      mailpit:
+        condition: service_started
+      dns-resolver:
+        condition: service_started
+      proconnect-mock:
+        condition: service_started
+
+  # ── Mailpit — boîte mail de DÉV / TEST ──────────────────────────────────────
+  # Intercepte tous les emails sortants (codes OTP, notifications) au lieu de les
+  # délivrer réellement.  UI → http://localhost:8025 · SMTP → mailpit:1025.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    networks: [backend, frontend]
+    ports:
+      - "8025:8025"   # UI web
+      - "1025:1025"   # SMTP (utile aussi pour `pnpm stack:dev` : SMTP_HOST=localhost)
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+      MP_MAX_MESSAGES: "500"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+  # ── pgweb — navigateur de base de données (DÉV / TEST) ──────────────────────
+  # Explore Postgres depuis le navigateur → http://localhost:8081 (connexion auto).
+  pgweb:
+    image: sosedoff/pgweb:latest
+    restart: unless-stopped
+    networks: [backend, frontend]   # backend → joint `db` ; frontend → port publié
+    ports:
+      - "8081:8081"
+    environment:
+      # Connexion auto à la base interne du compose (host = "db"). Le mot de passe
+      # (secret) vient du `.env` auto-chargé par compose.
+      PGWEB_DATABASE_URL: postgres://certify:${POSTGRES_PASSWORD}@db:5432/certifychain?sslmode=disable
+      HOME: /tmp   # rootfs read-only → rediriger ~/.pgweb vers le tmpfs
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+  # ── Mock ProConnect (OIDC) — verify.md §3 ──────────────────────────────────
+  proconnect-mock:
+    image: node:22-alpine
+    restart: unless-stopped
+    command: ["node", "/app/server.mjs"]
+    working_dir: /app
+    volumes:
+      - ./dev/proconnect-mock:/app:ro
+    environment:
+      PORT: "8090"
+      ISSUER: http://proconnect-mock:8090       # vu par l'API (serveur→conteneur)
+      PUBLIC_ORIGIN: http://localhost:8090       # vu par le navigateur (hôte)
+      # Le SIRET attesté ; DOIT == le SIRET déclaré par l'école testée.
+      MOCK_SIRET: ${MOCK_SIRET:-12345678901234}
+    networks: [frontend]
+    ports:
+      - "8090:8090"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+  # ── CoreDNS — sert la zone locale `ecole-test.fr` (option DNS TXT) ──────────
+  dns-resolver:
+    image: coredns/coredns:1.11.1
+    restart: unless-stopped
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./dev/coredns:/etc/coredns:ro
+    networks:
+      # backend+frontend → son 127.0.0.11 résout db/mailpit/server + sort vers le net ;
+      # devdns (IP fixe) → cible du `dns:` de l'API.
+      backend: {}
+      frontend: {}
+      devdns:
+        ipv4_address: 172.29.7.53
+    # CoreDNS binds :53 through a binary that carries file capabilities
+    # (cap_net_bind_service+ep). `no-new-privileges` makes the kernel REFUSE to exec
+    # a file that carries capabilities → EPERM ("exec /coredns: operation not
+    # permitted"), so the resolver crash-loops and the API loses outbound DNS
+    # (INSEE/Gemini fetches fail). This is a DEV-ONLY mock: drop that flag and grant
+    # only NET_BIND_SERVICE (required to bind the privileged port 53).
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+  # ── Stripe CLI — relaie les webhooks de paiement (option Postal) ────────────
+  #   Au démarrage, le CLI imprime un secret `whsec_…` : copie-le dans
+  #   STRIPE_WEBHOOK_SECRET (.env) puis recrée l'API. Voir GUIDE_PROCONNECT_STRIPE.md.
+  stripe-cli:
+    image: stripe/stripe-cli:latest
+    restart: unless-stopped
+    command:
+      ["listen", "--forward-to", "http://server:4000/verification/stripe/webhook"]
+    environment:
+      # Clé secrète de TEST Stripe (sk_test_…) — depuis .env.
+      STRIPE_API_KEY: ${STRIPE_SECRET_KEY:-}
+    networks: [frontend]
+    depends_on:
+      server:
+        condition: service_started
+    profiles: ["postal"]   # opt-in : `--profile postal` (évite une erreur sans clé Stripe)
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+networks:
+  # Réseau dédié à l'IP fixe de CoreDNS (isole l'ipam de backend/frontend).
+  devdns:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.7.0/24

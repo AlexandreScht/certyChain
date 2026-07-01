@@ -41,9 +41,9 @@ const stats = [
 ];
 
 const tintMap: Record<string, string> = {
-  magenta: "from-magenta-100 to-white text-magenta-500",
-  amber: "from-amber-500/15 to-white text-amber-500",
-  indigo: "from-indigo-100 to-white text-indigo-600",
+  magenta: "from-magenta-100 to-white dark:to-transparent text-magenta-500",
+  amber: "from-amber-500/15 to-white dark:to-transparent text-amber-500",
+  indigo: "from-indigo-100 to-white dark:to-transparent text-indigo-600",
 };
 
 export default function ProblemSection() {

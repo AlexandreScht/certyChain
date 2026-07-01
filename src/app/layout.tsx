@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Space_Grotesk, Outfit } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const inter = Inter({
@@ -45,14 +46,24 @@ export const metadata: Metadata = {
   },
 };
 
+// Runs before first paint to set the theme (no flash of the wrong theme).
+// Honors a saved choice, else the OS preference.
+const themeInit = `(function(){try{var t=localStorage.getItem('theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t;}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html
       lang="fr"
+      suppressHydrationWarning
       className={`${inter.variable} ${spaceGrotesk.variable} ${outfit.variable} scroll-smooth`}
     >
+      <head>
+        <Script id="theme-init" strategy="beforeInteractive">
+          {themeInit}
+        </Script>
+      </head>
       <body className="antialiased bg-ivory text-ink">{children}</body>
     </html>
   );

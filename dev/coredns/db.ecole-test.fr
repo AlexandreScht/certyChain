@@ -1,0 +1,25 @@
+; Zone for ecole-test.fr — DEV / TEST ONLY (DNS ownership proof, verify.md §1).
+;
+; HOW TO USE
+;   1. Register/seed a school whose contact email domain is `ecole-test.fr`
+;      (e.g. direction@ecole-test.fr) and set it `provisional`.
+;   2. On /ecole/verification choose "Enregistrement DNS". CertifyChain shows:
+;          Nom    : _certifychain.ecole-test.fr
+;          Valeur : certifychain-verify=<TOKEN>
+;   3. Paste <TOKEN> into the TXT record below (replace REPLACE_WITH_TOKEN),
+;      bump the SOA serial, save. CoreDNS reloads within ~10s.
+;   4. Click "Vérifier" → the API resolves the TXT here → school approved.
+;
+$TTL 30
+@   IN  SOA ns.ecole-test.fr. admin.ecole-test.fr. (
+        2026062901 ; serial — increment on every edit
+        60         ; refresh
+        30         ; retry
+        300        ; expire
+        30 )       ; minimum
+@                       IN  NS   ns.ecole-test.fr.
+ns                      IN  A    127.0.0.1
+@                       IN  A    127.0.0.1
+
+; ── The ownership-proof record. Paste your token after the `=`. ──────────────
+_certifychain           IN  TXT  "certifychain-verify=REPLACE_WITH_TOKEN"

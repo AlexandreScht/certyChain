@@ -1,8 +1,15 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+#
+# Single .gitignore for the whole monorepo: root web app + every pnpm workspace
+# member (server/, admin/, wallet/). Patterns below are UNANCHORED (no leading
+# slash) on purpose so they match at any depth — one file to maintain instead of
+# one per package (a missing per-package .gitignore is exactly what let
+# `git add .` stage server/node_modules once). Do not add per-package
+# .gitignore files back — extend this one instead.
 
 # dependencies
-/node_modules
-/.pnp
+node_modules/
+.pnp
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -11,14 +18,15 @@
 !.yarn/versions
 
 # testing
-/coverage
+coverage/
 
 # next.js
-/.next/
-/out/
+.next/
+out/
 
-# production
-/build
+# build output (server tsup dist/, etc.)
+dist/
+build/
 
 # misc
 .DS_Store
@@ -32,6 +40,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -41,5 +50,4 @@ yarn-error.log*
 next-env.d.ts
 
 # history
-./history
 .history

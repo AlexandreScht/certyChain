@@ -1,0 +1,16 @@
+**/node_modules
+**/.next
+**/dist
+**/.git
+**/.env
+**/.env.*
+!**/.env.example
+**/npm-debug.log*
+**/.DS_Store
+**/coverage
+**/.turbo
+**/*.log
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+README*.md

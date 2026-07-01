@@ -1,0 +1,22 @@
+# CoreDNS — DEV / TEST ONLY. Lets the API resolve a DNS-TXT ownership proof
+# (verify.md §1) for a domain you don't actually own, fully offline.
+#
+# • The `ecole-test.fr` zone is served from the local file below — edit it to
+#   paste the token CertifyChain shows you, then `docker compose ... restart
+#   proconnect-dns` (CoreDNS auto-reloads the file within ~30s anyway).
+# • EVERYTHING ELSE is forwarded to Docker's embedded DNS (127.0.0.11) so that
+#   service names (db, mailpit, server…) AND public domains (Stripe/INSEE) keep
+#   resolving normally.
+
+ecole-test.fr:53 {
+    file /etc/coredns/db.ecole-test.fr
+    reload 10s
+    log
+}
+
+.:53 {
+    forward . 127.0.0.11
+    reload 10s
+    log
+    errors
+}

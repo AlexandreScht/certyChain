@@ -1,0 +1,265 @@
+﻿CertifyChain — Cahier des chargesConfidentiel
+CAHIER DES CHARGES
+Spécification fonctionnelle et technique
+
+
+
+
+
+
+CertifyChain
+Plateforme SaaS de délivrance et de vérification de diplômes par preuve cryptographique à divulgation nulle
+
+
+
+
+Version
+	1.0 — Juin 2025
+	
+
+Statut
+	Spécification initiale
+	
+
+Auteur
+	Équipe fondatrice
+	
+
+Confidentialité
+	Document propriétaire — diffusion restreinte
+	
+
+
+
+
+
+1. Présentation générale du projet
+1.1 Contexte et problème adressé
+La fraude aux diplômes représente un problème structurel et coûteux pour les entreprises recrutant sur la foi de documents papier ou de scans non vérifiables. Selon plusieurs études européennes, entre 15 % et 30 % des candidatures comportent une inexactitude relative aux formations déclarées.
+En parallèle, les candidats légitimes subissent des délais de vérification longs (plusieurs semaines pour contacter une école), une dépendance aux services administratifs de leur établissement, et une impossibilité pratique de prouver leurs compétences de manière instantanée et confidentielle.
+
+
+1.2 Solution proposée
+CertifyChain est un SaaS (Software as a Service) B2B permettant à des établissements d'enseignement (écoles, universités, organismes de formation) d'émettre des diplômes numériques authentifiés par cryptographie, et à leurs diplômés de partager ces certifications de manière instantanée, vérifiable et confidentielle avec n'importe quel recruteur dans le monde.
+La vérification repose sur des preuves ZKP (Zero-Knowledge Proofs) de type NIZK : le recruteur peut confirmer qu'un diplôme est authentique sans jamais accéder au contenu du document ni devoir créer de compte sur la plateforme.
+
+
+1.3 Vision produit
+* Rendre la fraude aux diplômes techniquement impossible
+* Permettre à un recruteur de vérifier une certification en moins de 10 secondes
+* Garantir la confidentialité du candidat : seules les informations qu'il choisit de partager sont visibles
+* Fonctionner depuis n'importe quel appareil (téléphone, tablette, PC), sans installation logicielle
+
+
+2. Acteurs et périmètre d'usage
+2.1 Les trois rôles principaux
+
+
+Acteur
+	Rôle
+	Accès / Interface
+	École / Émetteur
+	Génère et signe les diplômes avec sa clé privée cryptographique
+	Interface web admin — création, gestion, diffusion
+	Élève / Candidat
+	Consulte ses diplômes et partage des liens de vérification
+	Interface web candidat — wallet numérique intégré
+	Recruteur / Vérificateur
+	Clique sur un lien public pour vérifier l'authenticité
+	Page de vérification publique — aucune création de compte
+	
+
+2.2 Flux général d'utilisation
+
+
+1. École signele diplôme
+	2. Élève reçoitdans son wallet
+	3. Élève partageun lien public
+	4. Recruteur cliqueet voit le résultat
+	
+
+Ce flux est entièrement asynchrone : l'école n'a pas besoin d'être disponible au moment de la vérification, et le candidat n'a pas besoin d'être actif lors du clic du recruteur. La preuve est autonome.
+
+
+3. Fonctionnalités détaillées par rôle
+3.1 Interface École (Émetteur)
+3.1.1 Gestion du compte établissement
+* Création du compte école avec vérification de l'identité institutionnelle (SIRET, accré­ditation)
+* Génération automatique d'une paire de clés cryptographiques (clé privée secrète + clé publique publiée)
+* Tableau de bord de suivi : nombre de diplômes émis, vérifications effectuées, diplômes révoqués
+
+
+3.1.2 Émission d'un diplôme
+* Formulaire de création : nom du diplômé, intitulé de la formation, date d'obtention, mention, identifiant unique
+* Signature cryptographique automatique du diplôme avec la clé privée de l'école au moment de l'émission
+* Génération d'un identifiant de diplôme unique (UUID v4) non prédictible
+* Envoi automatique d'une notification à l'élève concerné (email + lien d'accès au wallet)
+* Import en masse possible via fichier CSV pour les promotions annuelles
+
+
+3.1.3 Gestion des diplômes émis
+* Liste de tous les diplômes avec filtres (année, formation, statut)
+* Révocation d'un diplôme (annulation de diplôme délivré par erreur ou suite à fraude détectée)
+* Les diplômes révoqués renvoient automatiquement « Diplôme introuvable ou révoqué » lors d'une vérification
+
+
+3.2 Interface Élève / Candidat (Wallet)
+3.2.1 Accès au wallet personnel
+* Connexion via email + code OTP (sans mot de passe à mémoriser)
+* Accès depuis navigateur web mobile ou desktop — aucune application à installer
+* Vue liste de tous les diplômes reçus depuis les établissements partenaires
+
+
+3.2.2 Consultation et partage d'un diplôme
+* Visualisation du diplôme en format carte numérique (nom, école, date, formation, mention)
+* Génération d'un lien de vérification public unique pour chaque diplôme
+* Ce lien peut être copié et intégré dans un CV, un profil LinkedIn, un email ou un QR code
+* Option : lien à durée limitée (ex. valable 30 jours) pour contrôler l'accès dans le temps
+Le candidat ne partage jamais le diplôme lui-même, uniquement un lien de vérification. C'est ce lien qui déclenche la procédure cryptographique côté recruteur.
+
+
+3.3 Page de vérification publique (Recruteur)
+3.3.1 Parcours de vérification sans compte
+* Le recruteur clique sur le lien reçu depuis son navigateur (PC ou mobile)
+* Le système génère automatiquement un nonce cryptographique unique (nombre aléatoire à usage unique)
+* Le nonce est combiné au secret du candidat (preuve d'identité) puis au secret de l'école (preuve d'authenticité)
+* Le calcul de vérification s'effectue côté serveur en moins de 2 secondes
+
+
+3.3.2 Résultat affiché
+Deux résultats possibles, affichés de manière claire sur la page de vérification :
+
+
+Diplôme vérifié
+Nom du diplômé, intitulé du diplôme, établissement émetteur, date d'obtention. Signature cryptographique valide.
+	Diplôme introuvable
+Lien invalide, expiré, révoqué, ou diplôme non émis par l'établissement revendiqué.
+	
+
+Aucune information supplémentaire (notes, relevés de notes complets, données personnelles) n'est accessible par le recruteur sans autorisation explicite du candidat.
+
+
+4. Architecture technique et cryptographie
+4.1 Stack technique cible
+* Frontend : Next.js (React) — interfaces école, candidat et page de vérification publique
+* Backend API : Elysia / NestJS ou équivalent
+* Base de données : PostgreSQL (métadonnées diplômes) + stockage objet (documents signés)
+* Cryptographie ZKP : Bibliothèque SnarkJS (PLONK ou Groth16) avec circuits Circom, ou infrastructure Polygon ID / Privado ID
+* Infrastructure : Vercel (frontend) + Railway ou Fly.io (API) + Supabase (BDD)
+* Package : pnpm
+
+
+4.2 Protocole de vérification par nonce
+Le mécanisme de vérification repose sur une preuve à divulgation nulle non-interactive (NIZK). Voici la séquence technique précise :
+
+
+* Étape 1 — Émission : l'école signe le hash du diplôme avec sa clé privée Ed25519. La signature et le hash sont stockés sur le serveur CertifyChain.
+* Étape 2 — Partage : l'élève génère un lien contenant un identifiant de délégation, pas le diplôme lui-même.
+* Étape 3 — Déclenchement : le navigateur du recruteur charge la page de vérification et le serveur génère un nonce aléatoire à usage unique.
+* Étape 4 — Construction de la preuve : le nonce est utilisé comme entrée publique du circuit ZKP. Le serveur calcule la preuve combinant (a) le secret du candidat — prouvant qu'il est bien le titulaire — et (b) la signature de l'école — prouvant l'authenticité.
+* Étape 5 — Vérification : la preuve est vérifiée contre la clé publique de l'école. Aucun secret ne transite en clair sur le réseau.
+
+
+Le nonce garantit qu'un lien capturé par un tiers ne peut pas être réutilisé : chaque clic génère une vérification unique et non reproductible.
+
+
+4.3 Sécurité et conformité
+* RGPD : les données personnelles des candidats ne sont jamais transmises au recruteur sans consentement explicite
+* Chiffrement en transit : TLS 1.3 sur toutes les communications
+* Chiffrement au repos : clés privées des écoles stockées dans un HSM (Hardware Security Module) ou coffre-fort de secrets (ex. Vault by HashiCorp)
+* Audit log : toute vérification est enregistrée (date, identifiant anonymisé, résultat) pour traçabilité légale
+* Pas de stockage des données de navigation du recruteur au-delà du log de vérification
+
+
+5. Modèle économique
+5.1 Structure tarifaire
+
+
+Offre
+	Prix / mois
+	Cible
+	Inclus
+	Starter
+	49 €
+	Petites écoles, CFA
+	500 diplômes/an, 1 admin
+	Pro
+	149 €
+	Écoles de taille moyenne
+	Illimité, 5 admins, stats
+	Enterprise
+	399 €+
+	Universités, réseaux
+	API, SSO, SLA, accompagnement
+	
+
+5.2 Seuil de rentabilité
+* Coût d'infrastructure mensuel estimé : ~52 € (hébergement, BDD, emails)
+* Seuil d'équilibre : 2 écoles Starter ou 1 école Pro
+* À 30 écoles Pro : ~4 300 € de marge nette mensuelle avec moins de 5 % de coûts variables
+
+
+6. Roadmap et jalons
+
+
+Phase
+	Calendrier
+	Livrables
+	MVP
+	M1 – M3
+	Interface école (émission), wallet élève basique, page de vérification publique, protocole nonce fonctionnel
+	Beta
+	M4 – M6
+	Import CSV, révocation, QR codes, onboarding self-service, premier pilote avec 3 écoles partenaires
+	V1.0
+	M7 – M9
+	API publique, statistiques avancées, intégration LinkedIn, SSO, documentation développeur
+	Scale
+	M10+
+	Marketplace de formations vérifiées, open API pour ATS (logiciels RH), internationalisation
+	
+
+
+
+7. Critères d'acceptation et de succès
+7.1 Critères techniques (MVP)
+* Un diplôme généré par l'interface école est vérifiable en moins de 3 secondes via le lien public
+* Un lien valide retourne systématiquement « Diplôme vérifié » avec les informations correctes
+* Un lien falsifié, expiré ou révoqué retourne systématiquement « Diplôme introuvable »
+* Aucune donnée personnelle du candidat n'est accessible par le recruteur sans son consentement
+* L'application fonctionne correctement sur Chrome, Firefox, Safari — mobile et desktop
+
+
+7.2 Critères de performance cibles
+* Temps de génération d'une preuve ZKP : < 2 secondes (calcul serveur)
+* Disponibilité de la plateforme : 99,5 % (SLA beta), 99,9 % (SLA Enterprise)
+* Temps de chargement de la page de vérification : < 1,5 secondes
+
+
+8. Glossaire
+
+
+Terme
+	Définition
+	ZKP
+	Zero-Knowledge Proof — preuve mathématique permettant de démontrer qu'une affirmation est vraie sans révéler les données sous-jacentes
+	NIZK
+	Non-Interactive Zero-Knowledge — variante de ZKP ne nécessitant aucun échange en temps réel entre les deux parties
+	Nonce
+	Number used once — nombre aléatoire généré une seule fois pour sécuriser une transaction cryptographique contre la réutilisation
+	Clé privée
+	Secret cryptographique détenu uniquement par l'école, utilisé pour signer les diplômes. Non transmissible, non récupérable
+	Clé publique
+	Contrepartie de la clé privée, publiée officiellement, permettant à quiconque de vérifier les signatures de l'école
+	Wallet
+	Portefeuille numérique de l'élève — interface sécurisée hébergeant ses diplômes et lui permettant de les partager
+	Hash
+	Empreinte numérique unique d'un document — toute modification du document, même minime, change le hash de manière imprévisible
+	SaaS
+	Software as a Service — logiciel accessible via navigateur web, sans installation, facturé par abonnement mensuel
+	
+
+
+
+— Fin du document —
+2025 — Document propriétairePage
