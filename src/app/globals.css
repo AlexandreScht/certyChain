@@ -392,8 +392,8 @@ html { scrollbar-width: thin; scrollbar-color: #9CA6C9 var(--color-ivory); }
   opacity: 0;
   transition: opacity 0.3s ease;
   background: radial-gradient(
-    250px circle at var(--mx, 50%) var(--my, 50%),
-    rgba(134, 129, 242, 0.12),
+    280px circle at var(--mx, 50%) var(--my, 50%),
+    var(--glow, rgba(134, 129, 242, 0.12)),
     transparent 80%
   );
 }
@@ -543,8 +543,8 @@ html { scrollbar-width: thin; scrollbar-color: #9CA6C9 var(--color-ivory); }
 }
 [data-theme="dark"] .hover-glow::after {
   background: radial-gradient(
-    250px circle at var(--mx, 50%) var(--my, 50%),
-    rgba(129,140,248,0.18),
+    280px circle at var(--mx, 50%) var(--my, 50%),
+    var(--glow, rgba(129,140,248,0.18)),
     transparent 80%
   );
 }
