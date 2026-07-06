@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* Design system partagé (tokens, glass/neumorph/grad, dark mode) — SOURCE UNIQUE.
+   Le fichier importé déclare aussi `@source "../"` pour que Tailwind scanne les
+   composants du package shared (hors du dossier de cette app, donc invisibles
+   à la détection automatique). Les styles PROPRES à cette app s'ajoutent ici,
+   en dessous — jamais dans le fichier partagé. */
+@import "../../../../../packages/shared/src/styles/globals.css";

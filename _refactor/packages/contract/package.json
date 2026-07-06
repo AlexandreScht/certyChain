@@ -1,0 +1,23 @@
+{
+  "name": "@certifychain/contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CertifyChain API contract — DTOs, enums, error codes and Zod schemas (single source of truth, no build step)",
+  "exports": {
+    ".": "./src/index.ts",
+    "./dto": "./src/dto.ts",
+    "./enums": "./src/enums.ts",
+    "./errors": "./src/errors.ts",
+    "./schemas": "./src/schemas.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,5 +1,8 @@
 # Guide — Obtenir les clés ProConnect & Stripe
 
+> **📍 Depuis la refonte monorepo (2026-07-07), le projet vit dans [`_refactor/`](./_refactor/).**
+> Le `.env` à renseigner est **`_refactor/.env`** ; les commandes se lancent depuis `_refactor/`.
+
 > Ce guide explique **étape par étape** comment récupérer **gratuitement** les
 > identifiants nécessaires aux deux preuves de propriété de `verify.md` :
 > **ProConnect** (l'État atteste l'identité + le SIRET d'un agent) et **Stripe**

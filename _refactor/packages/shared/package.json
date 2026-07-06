@@ -1,0 +1,36 @@
+{
+  "name": "@certifychain/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CertifyChain shared frontend kit — design system (ui + styles), session/theme hooks, CSRF fetch + error unwrapping, security headers. Browser-safe only: no backend framework, no hono, no Node APIs (no build step, raw .ts/.tsx/.css exports).",
+  "exports": {
+    "./ui": "./src/ui/index.ts",
+    "./ui/*": "./src/ui/*.tsx",
+    "./hooks/*": "./src/hooks/*.ts",
+    "./api/*": "./src/api/*.ts",
+    "./lib/*": "./src/lib/*.ts",
+    "./config/*": "./src/config/*.ts",
+    "./styles/*": "./src/styles/*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@certifychain/contract": "workspace:*"
+  },
+  "peerDependencies": {
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "^0.469.0",
+    "next": "16.2.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  }
+}

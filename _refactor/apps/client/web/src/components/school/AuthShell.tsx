@@ -1,0 +1,132 @@
+"use client";
+
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
+import { SchoolLogo } from "./SchoolLogo";
+import { FadeIn } from "./FadeIn";
+import ThemeToggle from "@certifychain/shared/ui/ThemeToggle";
+
+export interface AuthShellProps {
+  /** Eyebrow pill text above the heading. */
+  eyebrow: ReactNode;
+  /** Main heading (plain). */
+  title: ReactNode;
+  /** Gradient-highlighted suffix appended to the heading. */
+  highlight?: ReactNode;
+  /** Supporting subtitle under the heading. */
+  subtitle?: ReactNode;
+  /** Constrain the inner card. Defaults to a comfortable form width. */
+  maxWidthClass?: string;
+  /**
+   * Allow the page to scroll when the content is genuinely long (e.g. the KYB
+   * registration form). Off by default: login screens are pinned to the viewport
+   * with no scroll at all.
+   */
+  scroll?: boolean;
+  children: ReactNode;
+}
+
+/**
+ * Centered glass card on the bg-mesh backdrop — the shared canvas for the
+ * school login and KYB onboarding screens. Floating orbs mirror the Hero.
+ *
+ * The page is pinned to the viewport (`h-svh`). Login (`scroll` off) clips any
+ * overflow so the screen never scrolls; the long KYB form opts into `scroll`.
+ */
+export function AuthShell({
+  eyebrow,
+  title,
+  highlight,
+  subtitle,
+  maxWidthClass = "max-w-md",
+  scroll = false,
+  children,
+}: AuthShellProps) {
+  return (
+    <main className="relative h-svh overflow-hidden bg-mesh noise">
+      {/* Floating orbs (clipped by the overflow-hidden main) */}
+      <div
+        aria-hidden
+        className="absolute -top-32 -left-24 w-[380px] h-[380px] rounded-full animate-float-slow animate-morph"
+        style={{
+          background:
+            "radial-gradient(circle at 30% 30%, rgba(99,102,241,0.5), rgba(99,102,241,0) 70%)",
+          filter: "blur(48px)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="absolute -bottom-32 -right-24 w-[420px] h-[420px] rounded-full animate-float-slower animate-morph"
+        style={{
+          background:
+            "radial-gradient(circle at 50% 50%, rgba(6,182,212,0.4), rgba(6,182,212,0) 70%)",
+          filter: "blur(52px)",
+        }}
+      />
+      <div aria-hidden className="absolute inset-0 bg-dots opacity-30" />
+
+      {/* Content layer: centered. Login = no scroll (overflow clipped); the long
+          KYB form opts into scrolling. */}
+      <div className={`relative z-10 h-full px-5 ${scroll ? "overflow-y-auto" : "overflow-hidden"}`}>
+        <div className={`mx-auto flex min-h-full w-full ${maxWidthClass} flex-col justify-center py-6`}>
+          <FadeIn className="mb-6 flex items-center justify-between gap-3">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2.5 group"
+              aria-label="Retour à l'accueil CertifyChain"
+            >
+              <SchoolLogo />
+            </Link>
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-ink transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Accueil
+            </Link>
+          </FadeIn>
+
+          <FadeIn index={1} className="relative">
+            <div
+              aria-hidden
+              className="absolute -inset-px rounded-[calc(1.75rem+1px)] opacity-50 blur-md animate-spin-slower grad-ring -z-10"
+            />
+            <div className="relative glass-strong rounded-[1.75rem] p-7 sm:p-8 overflow-hidden">
+              {/* Corner control — the wrapper is absolutely positioned so it never
+                  shifts the layout (ThemeToggle keeps its own `relative`). */}
+              <div className="absolute top-4 right-4 z-20">
+                <ThemeToggle />
+              </div>
+              <div className="inline-flex items-center gap-2 neumorph-pill rounded-full px-3 py-1 text-[11px] font-semibold text-ink-soft mb-4">
+                <span className="relative flex w-1.5 h-1.5">
+                  <span className="absolute inset-0 rounded-full bg-indigo-500 animate-pulse-ring" />
+                  <span className="relative rounded-full w-1.5 h-1.5 bg-indigo-500" />
+                </span>
+                {eyebrow}
+              </div>
+
+              <h1 className="font-display font-bold text-ink tracking-tight text-[clamp(1.6rem,4vw,2.1rem)] leading-[1.1]">
+                {title}
+                {highlight && (
+                  <>
+                    {" "}
+                    <span className="grad-text-cool">{highlight}</span>
+                  </>
+                )}
+              </h1>
+
+              {subtitle && (
+                <p className="mt-2.5 text-sm text-muted leading-relaxed">
+                  {subtitle}
+                </p>
+              )}
+
+              <div className="mt-6">{children}</div>
+            </div>
+          </FadeIn>
+        </div>
+      </div>
+    </main>
+  );
+}

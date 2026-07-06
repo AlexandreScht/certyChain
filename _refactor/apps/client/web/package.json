@@ -1,0 +1,39 @@
+{
+  "name": "@certifychain/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CertifyChain — landing publique + portail École + page publique /verify (recruteur)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@certifychain/contract": "workspace:*",
+    "@certifychain/shared": "workspace:*",
+    "@gsap/react": "^2.1.2",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.38.0",
+    "gsap": "^3.15.0",
+    "hono": "^4.6.14",
+    "lucide-react": "^0.469.0",
+    "next": "16.2.4",
+    "qrcode.react": "^4.2.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@certifychain/server": "workspace:*",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

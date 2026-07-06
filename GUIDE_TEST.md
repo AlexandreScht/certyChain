@@ -1,5 +1,10 @@
 # Guide de test — CertifyChain
 
+> **📍 Depuis la refonte monorepo (2026-07-07), le projet vit dans [`_refactor/`](./_refactor/).**
+> Lancer toutes les commandes (`pnpm …`, `docker compose …`) **depuis `_refactor/`** — ports, URLs
+> et parcours de ce guide inchangés. Docs : [`_refactor/README.md`](./_refactor/README.md) ·
+> [`_refactor/PLAN.md`](./_refactor/PLAN.md). Raccourci E2E automatisé : `pnpm smoke` (44 checks).
+
 > Guide pas-à-pas pour tester l'application **de A à Z** : le parcours normal (école → candidat → recruteur) et les deux scénarios de **falsification** (depuis une fausse école, depuis un candidat malhonnête), avec **ce qui bloque la fraude et pourquoi**.
 >
 > Les résultats indiqués (« Résultat attendu ») ont été **vérifiés en live** sur la stack locale. Voir aussi [`PLAN.md`](./PLAN.md) (avancement) et [`README.md`](./README.md) (installation).

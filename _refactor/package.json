@@ -1,0 +1,34 @@
+{
+  "name": "certifychain",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev": "pnpm stack:dev",
+    "web:dev": "pnpm --filter @certifychain/web dev",
+    "web:build": "pnpm --filter @certifychain/web build",
+    "wallet:dev": "pnpm --filter @certifychain/wallet dev",
+    "wallet:build": "pnpm --filter @certifychain/wallet build",
+    "admin:dev": "pnpm --filter @certifychain/admin dev",
+    "admin:build": "pnpm --filter @certifychain/admin build",
+    "server:dev": "pnpm --filter @certifychain/server dev",
+    "server:build": "pnpm --filter @certifychain/server build",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @certifychain/server test",
+    "smoke": "pnpm --filter @certifychain/server smoke",
+    "db:generate": "pnpm --filter @certifychain/server db:generate",
+    "db:migrate": "pnpm --filter @certifychain/server db:migrate",
+    "db:seed": "pnpm --filter @certifychain/server db:seed",
+    "db:seed:admin": "pnpm --filter @certifychain/server seed:admin",
+    "stack:dev": "concurrently -n web,wallet,admin,api -c cyan,green,blue,magenta \"pnpm web:dev\" \"pnpm wallet:dev\" \"pnpm admin:dev\" \"pnpm server:dev\"",
+    "docker:up": "docker compose up --build",
+    "docker:dev": "docker compose -f docker-compose.yml -f docker-compose-dev.yml up --build",
+    "docker:down": "docker compose down",
+    "docker:dev:down": "docker compose -f docker-compose.yml -f docker-compose-dev.yml down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

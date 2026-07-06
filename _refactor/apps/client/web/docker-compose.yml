@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CertifyChain — WEB seul (déploiement indépendant du front public)
+#
+#   docker compose -f apps/client/web/docker-compose.yml up --build -d
+#   (depuis la racine du workspace, ou n'importe où : le contexte est relatif
+#    à CE fichier → ../../.. = racine du workspace, lockfile + packages/)
+#
+#   L'API est EXTERNE à ce déploiement : pointer NEXT_PUBLIC_API_URL vers son
+#   origine publique (ex. https://api.certifychain.fr) au build ET au run.
+#   La stack complète (db + api + 3 fronts) reste `docker-compose.yml` racine.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: certifychain-web
+
+services:
+  web:
+    build:
+      context: ../../..
+      dockerfile: apps/client/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+    ports:
+      - "${WEB_BIND:-0.0.0.0}:3000:3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    healthcheck:
+      test:
+        - CMD
+        - /nodejs/bin/node
+        - -e
+        - "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 384M }

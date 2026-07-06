@@ -1,5 +1,8 @@
 # Guide de test — Vérification de propriété d'un établissement (`verify.md`)
 
+> **📍 Depuis la refonte monorepo (2026-07-07), le projet vit dans [`_refactor/`](./_refactor/).**
+> Lancer toutes les commandes **depuis `_refactor/`** — ports, URLs et parcours inchangés.
+
 > Comment tester **en dev**, à la main, les **3 méthodes** de preuve de propriété
 > (DNS TXT · ProConnect · Courrier postal) décrites dans [`verify.md`](./verify.md).
 >

@@ -1,0 +1,150 @@
+/** App-wide constants (security-sensitive knobs live here, not scattered). */
+
+export const COOKIE = {
+  /** Access JWT (short-lived). */
+  ACCESS: "cc_at",
+  /** Refresh JWT (rotated). */
+  REFRESH: "cc_rt",
+  /** CSRF double-submit token (readable by JS, paired with header). */
+  CSRF: "cc_csrf",
+  /** Short-lived "MFA pending" token between the two login steps. */
+  MFA: "cc_mfa",
+} as const;
+
+/**
+ * Platform-admin realm cookies — fully isolated from the public (school/student)
+ * realm so one browser can hold both a school and an admin session at once.
+ */
+export const ADMIN_COOKIE = {
+  ACCESS: "cc_admin_at",
+  REFRESH: "cc_admin_rt",
+  CSRF: "cc_admin_csrf",
+  MFA: "cc_admin_mfa",
+} as const;
+
+export type CookieRealm = "public" | "admin";
+
+export const CSRF_HEADER = "x-csrf-token";
+
+/** MFA / TOTP knobs (RFC 6238). */
+export const MFA = {
+  /** Lifetime of the short-lived "MFA pending" token between login steps (seconds). */
+  CHALLENGE_TTL_SECONDS: 300,
+  TOTP_STEP_SECONDS: 30,
+  /** Accepted clock-drift window, in ± steps. */
+  TOTP_WINDOW: 1,
+  TOTP_DIGITS: 6,
+  ISSUER: "CertifyChain",
+} as const;
+
+export const OTP = {
+  LENGTH: 6,
+  /** OTP validity window (seconds). */
+  TTL_SECONDS: 600,
+  /** Max verification attempts before invalidation. */
+  MAX_ATTEMPTS: 5,
+  /** Min delay between OTP requests for the same email (seconds). */
+  RESEND_COOLDOWN: 30,
+} as const;
+
+export const VERIFICATION = {
+  /** Single-use nonce validity (seconds) — short, anti-replay. */
+  NONCE_TTL_SECONDS: 120,
+} as const;
+
+/** Ownership-verification knobs (verify.md security section). */
+export const OWNERSHIP_VERIFICATION = {
+  /** DNS-TXT token validity. */
+  DNS_TOKEN_TTL_SECONDS: 72 * 3600,
+  /** Postal code validity once dispatched. */
+  POSTAL_CODE_TTL_SECONDS: 30 * 24 * 3600,
+  /** OIDC (ProConnect) state/nonce validity. */
+  OIDC_STATE_TTL_SECONDS: 10 * 60,
+  /** Max wrong postal-code submissions before the attempt is locked. */
+  POSTAL_MAX_ATTEMPTS: 5,
+  /** Length of the mailed postal code. */
+  POSTAL_CODE_LENGTH: 6,
+} as const;
+
+/** node:crypto scrypt parameters for admin password hashing. */
+export const SCRYPT = {
+  N: 1 << 15, // 32768
+  r: 8,
+  p: 1,
+  keyLen: 64,
+  saltLen: 16,
+  maxmem: 64 * 1024 * 1024,
+} as const;
+
+export const SHARE_LINK = {
+  TOKEN_BYTES: 24,
+  /** Default expiry if the student picks "limited" without a value (days). */
+  DEFAULT_EXPIRY_DAYS: 30,
+} as const;
+
+/**
+ * Claim-link knobs — binds a school-issued delivery address (may go stale once
+ * the holder leaves) to the holder's durable personal login email. TTL is
+ * deliberately long: the whole point is surviving a student who doesn't check
+ * their school inbox for weeks around graduation. Resend mints a fresh token.
+ */
+export const CLAIM = {
+  TOKEN_BYTES: 24,
+  TTL_SECONDS: 180 * 24 * 3600,
+} as const;
+
+/** Bulk CSV import limits (anti-DoS — one request must not amplify unbounded). */
+export const CSV_IMPORT = {
+  MAX_ROWS: 2000,
+} as const;
+
+/** Per-account login throttle (in-memory; single-instance MVP). */
+export const LOGIN_THROTTLE = {
+  MAX_FAILS: 5,
+  LOCK_SECONDS: 15 * 60,
+} as const;
+
+/**
+ * Rate-limit budgets (in-memory fixed window; single-instance MVP — back with
+ * Redis for horizontal scale). Values are tuned around a key principle:
+ *
+ *   • Auth flows (login / OTP) are keyed on the TARGET ACCOUNT (email or user id),
+ *     NOT on the IP — so 2 000 students behind one campus NAT, or a carrier CGNAT,
+ *     each get their own budget, and an attacker rotating IPs cannot evade it.
+ *   • The IP key is only a COARSE anti-flood backstop. Authenticated traffic is
+ *     bucketed per user; anonymous traffic falls back to a *more generous* per-IP
+ *     ceiling precisely because one egress IP can stand for many real people.
+ *   • Hard brute-force stops stay per-account: OTP `MAX_ATTEMPTS`, the postal
+ *     `POSTAL_MAX_ATTEMPTS`, and the progressive `LOGIN_THROTTLE` lockout.
+ */
+export const RATE_LIMIT = {
+  /** Global backstop, per authenticated user (each isolated). */
+  GLOBAL_USER: { max: 240, windowSec: 60 },
+  /** Global backstop, per IP for anonymous traffic (tolerates shared NAT). */
+  GLOBAL_IP: { max: 600, windowSec: 60 },
+  /** OTP code requests — per target email (immune to shared IP / IP rotation). */
+  OTP_REQUEST_EMAIL: { max: 5, windowSec: 15 * 60 },
+  /** Platform-wide OTP send budget — bounds email cost vs. address-spraying. */
+  OTP_SEND_GLOBAL: { max: 300, windowSec: 60 },
+  /** OTP verification — per email (the per-code MAX_ATTEMPTS=5 is the hard stop). */
+  OTP_VERIFY_EMAIL: { max: 20, windowSec: 10 * 60 },
+  /** Password login — per email (complements the progressive lockout). */
+  LOGIN_EMAIL: { max: 15, windowSec: 10 * 60 },
+  /** TOTP second factor — per account (the MFA-pending subject). */
+  TOTP_VERIFY_ACCOUNT: { max: 12, windowSec: 10 * 60 },
+  /** Public verification surface (recruiter, anonymous) — per IP. */
+  VERIFY_IP: { max: 60, windowSec: 60 },
+  /** School ownership-proof mutations — per IP. */
+  VERIFICATION_IP: { max: 30, windowSec: 60 },
+  /** School self-registration — per IP. */
+  REGISTER_IP: { max: 10, windowSec: 10 * 60 },
+  /** Admin-triggered re-validation — per IP (route is admin-authed anyway). */
+  ADMIN_REVALIDATE_IP: { max: 20, windowSec: 60 },
+  /** Billing mutations (checkout/portal session creation) — per IP. */
+  BILLING_IP: { max: 20, windowSec: 60 },
+  /** Claim-link surface (info/otp request/otp verify) — per TOKEN, immune to
+      IP rotation and shared NAT, same rationale as the auth-flow budgets above. */
+  CLAIM_TOKEN: { max: 30, windowSec: 60 },
+  /** Claim-link resend — per token, tighter (mints a fresh token + sends mail). */
+  CLAIM_RESEND: { max: 3, windowSec: 3600 },
+} as const;

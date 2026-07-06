@@ -1,5 +1,8 @@
 # CertifyChain — Portail des services
 
+> **📍 Depuis la refonte monorepo (2026-07-07), le projet vit dans [`_refactor/`](./_refactor/).**
+> Les commandes se lancent depuis `_refactor/` — mêmes ports et URLs qu'avant.
+
 > URLs d'accès locaux (dev) et via Docker Compose.
 
 ---
