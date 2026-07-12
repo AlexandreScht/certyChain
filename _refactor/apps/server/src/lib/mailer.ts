@@ -146,6 +146,21 @@ export async function sendPostalDispatchOrder(
   });
 }
 
+/** Forwards a landing-page waitlist signup to the platform team inbox. */
+export async function sendWaitlistNotification(
+  to: string,
+  prospectEmail: string,
+): Promise<void> {
+  await sendMail({
+    to,
+    subject: "CertifyChain — Nouvelle demande pilote (waitlist)",
+    text:
+      `Un établissement souhaite rejoindre le pilote CertifyChain.\n\n` +
+      `E-mail laissé sur la landing : ${prospectEmail}\n` +
+      `Recontacter sous 24h ouvrées (engagement affiché sur la page).`,
+  });
+}
+
 /** Alerts the platform admin that a new school needs manual validation. */
 export async function sendSchoolReviewNotification(
   to: string,

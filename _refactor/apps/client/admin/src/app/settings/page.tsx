@@ -84,8 +84,10 @@ export default function AdminSettingsPage() {
                   <h3 className="font-display font-bold text-ink text-base">Auto-validation par IA</h3>
                   <p className="text-sm text-muted mt-0.5 leading-relaxed">
                     Lorsqu&apos;elle est activée, une école dont le SIRET est confirmé au registre
-                    SIRENE <strong>et</strong> dont le score atteint le seuil est approuvée
-                    automatiquement (génération des clés + certificat). Sinon, une revue manuelle
+                    SIRENE <strong>et</strong> dont le score atteint le seuil passe automatiquement
+                    en « vérification de propriété » (existence confirmée — <strong>aucune clé
+                    n&apos;est générée</strong> tant qu&apos;elle n&apos;a pas prouvé le contrôle de
+                    l&apos;établissement par DNS, courrier ou ProConnect). Sinon, une revue manuelle
                     est requise et un e-mail d&apos;alerte est envoyé.
                   </p>
 
@@ -154,11 +156,11 @@ export default function AdminSettingsPage() {
                   Registre SIRENE (INSEE) — source de vérité
                 </span>
                 {settings?.inseeConfigured ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-success/12 px-3 py-1.5 text-xs font-semibold text-success">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-success/12 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                     <CheckCircle2 className="w-4 h-4" /> Configuré
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/12 px-3 py-1.5 text-xs font-semibold text-amber-500">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/12 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300">
                     <AlertTriangle className="w-4 h-4" /> Clé absente — repli IA/manuel
                   </span>
                 )}
@@ -169,11 +171,11 @@ export default function AdminSettingsPage() {
                   Vérification IA ({settings?.geminiModel})
                 </span>
                 {settings?.geminiConfigured ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-success/12 px-3 py-1.5 text-xs font-semibold text-success">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-success/12 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                     <CheckCircle2 className="w-4 h-4" /> Configuré
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/12 px-3 py-1.5 text-xs font-semibold text-amber-500">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/12 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300">
                     <AlertTriangle className="w-4 h-4" /> Clé absente — revue manuelle
                   </span>
                 )}

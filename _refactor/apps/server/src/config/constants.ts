@@ -138,6 +138,8 @@ export const RATE_LIMIT = {
   VERIFICATION_IP: { max: 30, windowSec: 60 },
   /** School self-registration — per IP. */
   REGISTER_IP: { max: 10, windowSec: 10 * 60 },
+  /** Landing waitlist submissions — per IP (public, unauthenticated). */
+  WAITLIST_IP: { max: 5, windowSec: 10 * 60 },
   /** Admin-triggered re-validation — per IP (route is admin-authed anyway). */
   ADMIN_REVALIDATE_IP: { max: 20, windowSec: 60 },
   /** Billing mutations (checkout/portal session creation) — per IP. */

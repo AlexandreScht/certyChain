@@ -120,7 +120,8 @@ export function DiplomaDetailCard({
         <div className="mt-5 flex flex-wrap items-center justify-between gap-2 text-[11px]">
           <div className="flex items-center gap-1.5 text-ink font-medium">
             <KeyRound className="w-3.5 h-3.5 text-indigo-600" />
-            ZKP Groth16 · nonce unique
+            {/* Le moteur réel est ed25519-nonce-v1 — pas de fausse mention Groth16. */}
+            Preuve cryptographique · nonce unique
           </div>
           {active ? (
             <div className="flex items-center gap-1.5 text-success font-semibold">

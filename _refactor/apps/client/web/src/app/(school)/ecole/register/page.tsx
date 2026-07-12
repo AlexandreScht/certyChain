@@ -90,6 +90,10 @@ const FIELD_ORDER: FieldKey[] = [
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Inlined at build: the self-service activation tip only makes sense in dev
+// (the API answers 403 elsewhere).
+const IS_DEV = process.env.NODE_ENV !== "production";
+
 /** Removes every whitespace character (users often paste SIRET/UAI with spaces). */
 function stripSpaces(v: string): string {
   return v.replace(/\s+/g, "");
@@ -196,7 +200,9 @@ export default function SchoolRegisterPage() {
   const [form, setForm] = useState<FormState>(INITIAL);
   const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
+  // null = form; otherwise the status the API answered with — the success
+  // screen adapts (provisional = auto-validated → ownership proof is next).
+  const [done, setDone] = useState<null | "pending" | "provisional">(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   function set<K extends keyof FormState>(key: K, value: string) {
@@ -231,8 +237,8 @@ export default function SchoolRegisterPage() {
 
     setSubmitting(true);
     try {
-      await registerSchool(buildPayload(normalized));
-      setDone(true);
+      const res = await registerSchool(buildPayload(normalized));
+      setDone(res.status === "provisional" ? "provisional" : "pending");
     } catch (err) {
       if (err instanceof ApiClientError) {
         const mapped = mapServerError(err);
@@ -253,12 +259,17 @@ export default function SchoolRegisterPage() {
   const invalidFields = FIELD_ORDER.filter((k) => errors[k]);
 
   if (done) {
+    const provisional = done === "provisional";
     return (
       <AuthShell
         eyebrow="Dossier transmis"
-        title="Dossier reçu —"
-        highlight="validation KYB sous 48h"
-        subtitle="Nos équipes vérifient l'identité de votre établissement (Know Your Business). Vous recevrez un e-mail dès l'approbation."
+        title={provisional ? "Existence confirmée —" : "Dossier reçu —"}
+        highlight={provisional ? "prouvez la propriété" : "validation KYB sous 48h"}
+        subtitle={
+          provisional
+            ? "Votre établissement est confirmé au registre SIRENE. Dernière étape avant d'émettre : prouver que vous le contrôlez (DNS, courrier postal ou ProConnect) — un e-mail vient de vous être envoyé."
+            : "Nos équipes vérifient l'identité de votre établissement (Know Your Business). Vous recevrez un e-mail dès l'approbation."
+        }
       >
         <div className="flex flex-col items-center text-center gap-5">
           <div className="relative w-16 h-16">
@@ -269,29 +280,46 @@ export default function SchoolRegisterPage() {
           </div>
 
           <ul className="w-full flex flex-col gap-2.5 text-left">
-            <li className="flex items-start gap-3 neumorph-sm rounded-2xl px-4 py-3">
-              <Clock className="w-4.5 h-4.5 text-indigo-600 shrink-0 mt-0.5" />
-              <div>
-                <div className="text-sm font-semibold text-ink">
-                  Vérification KYB sous 48h
+            {provisional ? (
+              <li className="flex items-start gap-3 neumorph-sm rounded-2xl px-4 py-3">
+                <ShieldCheck className="w-4.5 h-4.5 text-indigo-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-semibold text-ink">
+                    Preuve de propriété à réaliser
+                  </div>
+                  <div className="text-xs text-muted mt-0.5">
+                    Connectez-vous puis choisissez une méthode (DNS, courrier postal
+                    ou ProConnect) dans l&apos;onglet « Vérification ».
+                  </div>
                 </div>
-                <div className="text-xs text-muted mt-0.5">
-                  Contrôle SIRET (registre SIRENE) et de l&apos;identité du responsable.
+              </li>
+            ) : (
+              <li className="flex items-start gap-3 neumorph-sm rounded-2xl px-4 py-3">
+                <Clock className="w-4.5 h-4.5 text-indigo-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-semibold text-ink">
+                    Vérification KYB sous 48h
+                  </div>
+                  <div className="text-xs text-muted mt-0.5">
+                    Contrôle SIRET (registre SIRENE) et de l&apos;identité du responsable.
+                  </div>
                 </div>
-              </div>
-            </li>
-            <li className="flex items-start gap-3 neumorph-sm rounded-2xl px-4 py-3">
-              <Terminal className="w-4.5 h-4.5 text-indigo-600 shrink-0 mt-0.5" />
-              <div>
-                <div className="text-sm font-semibold text-ink">
-                  Activation développeur
+              </li>
+            )}
+            {IS_DEV && (
+              <li className="flex items-start gap-3 neumorph-sm rounded-2xl px-4 py-3">
+                <Terminal className="w-4.5 h-4.5 text-indigo-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-semibold text-ink">
+                    Activation développeur
+                  </div>
+                  <div className="text-xs text-muted mt-0.5">
+                    En environnement de dev, activez l&apos;établissement en libre-service
+                    depuis le tableau de bord pour générer vos clés PKI immédiatement.
+                  </div>
                 </div>
-                <div className="text-xs text-muted mt-0.5">
-                  En environnement de dev, activez l&apos;établissement en libre-service
-                  depuis le tableau de bord pour générer vos clés PKI immédiatement.
-                </div>
-              </div>
-            </li>
+              </li>
+            )}
           </ul>
 
           <Button

@@ -37,6 +37,9 @@ export const RegisterSchoolSchema = z.object({
 
 export const RequestOtpSchema = z.object({ email: emailSchema });
 
+/** Landing waitlist — a prospect school leaves its contact email. */
+export const WaitlistSchema = z.object({ email: emailSchema });
+
 export const VerifyOtpSchema = z.object({
   email: emailSchema,
   code: z.string().trim().regex(/^\d{6}$/, "Code à 6 chiffres"),
@@ -116,6 +119,7 @@ export type StartCheckoutInput = z.infer<typeof StartCheckoutSchema>;
 export type SchoolLoginInput = z.infer<typeof SchoolLoginSchema>;
 export type RegisterSchoolInput = z.infer<typeof RegisterSchoolSchema>;
 export type RequestOtpInput = z.infer<typeof RequestOtpSchema>;
+export type WaitlistInput = z.infer<typeof WaitlistSchema>;
 export type VerifyOtpInput = z.infer<typeof VerifyOtpSchema>;
 export type CreateDiplomaInput = z.infer<typeof CreateDiplomaSchema>;
 export type ListDiplomasQuery = z.infer<typeof ListDiplomasQuerySchema>;

@@ -107,16 +107,46 @@ export type FetchLike = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+/** Pathname of a request input (string | URL | Request), or "" when unparsable. */
+function pathnameOf(input: RequestInfo | URL): string {
+  try {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    return new URL(url, API_BASE).pathname;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Credential-presenting endpoints where a 401 means "wrong credentials", not
+ * "expired session" — refreshing there would only waste a round-trip.
+ */
+function isCredentialPath(pathname: string): boolean {
+  return pathname.includes("/login") || pathname.includes("/otp/");
+}
+
 /**
  * Builds the realm-bound `fetch` handed to the typed hono client (`hc`):
  * - always sends credentials (httpOnly session cookies);
  * - echoes the realm's CSRF cookie (`cc_csrf` / `cc_admin_csrf`) in the
  *   {@link CSRF_HEADER} header on mutating methods (double-submit pattern);
+ * - when `refreshPath` is provided: on a 401, silently rotates the session via
+ *   `POST refreshPath` (single-flight) and retries the original request ONCE —
+ *   without this, the 15-minute access token silently logs everyone out even
+ *   though the 30-day refresh cookie is sitting right there;
  * - maps network-level failures to `ApiClientError("network_error")` so callers
  *   never have to distinguish a thrown `fetch` from an API error shape.
  */
-export function createCsrfFetch(csrfCookieName: string): FetchLike {
-  return async (input, init) => {
+export function createCsrfFetch(
+  csrfCookieName: string,
+  opts?: { refreshPath?: string },
+): FetchLike {
+  const refreshPath = opts?.refreshPath ?? null;
+  // Single-flight: concurrent 401s share one refresh (rotation invalidates the
+  // presented token, so racing refreshes would log the user out).
+  let refreshing: Promise<boolean> | null = null;
+
+  const doFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const method = (init?.method ?? "GET").toUpperCase();
     const headers = new Headers(init?.headers);
 
@@ -133,6 +163,45 @@ export function createCsrfFetch(csrfCookieName: string): FetchLike {
         details: cause,
       });
     }
+  };
+
+  const tryRefresh = (): Promise<boolean> => {
+    if (!refreshing) {
+      refreshing = (async () => {
+        try {
+          const headers = new Headers();
+          const csrf = readCookie(csrfCookieName);
+          if (csrf) headers.set(CSRF_HEADER, csrf);
+          const res = await fetch(`${API_BASE}${refreshPath}`, {
+            method: "POST",
+            headers,
+            credentials: "include",
+          });
+          return res.ok;
+        } catch {
+          return false;
+        } finally {
+          refreshing = null;
+        }
+      })();
+    }
+    return refreshing;
+  };
+
+  return async (input, init) => {
+    const res = await doFetch(input, init);
+    if (
+      res.status !== 401 ||
+      !refreshPath ||
+      typeof document === "undefined" || // browser only (cookies required)
+      pathnameOf(input) === refreshPath ||
+      isCredentialPath(pathnameOf(input))
+    ) {
+      return res;
+    }
+    if (!(await tryRefresh())) return res;
+    // Retry once with fresh cookies (the CSRF token was rotated by the refresh).
+    return doFetch(input, init);
   };
 }
 

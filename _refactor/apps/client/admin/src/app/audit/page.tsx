@@ -7,22 +7,8 @@ import { listAdminAudit } from "@/lib/api/endpoints";
 import { ApiClientError } from "@/lib/api/client";
 import { Button, Card, Select, Table, PageHeader, useToast, type TableColumn } from "@certifychain/shared/ui";
 import { FadeIn } from "@/components/admin";
+import { AUDIT_LABELS } from "@/lib/audit-labels";
 import type { AdminAuditEntryDTO } from "@certifychain/contract/dto";
-
-const AUDIT_LABELS: Record<string, string> = {
-  school_registered: "Inscription d'école",
-  school_approved: "École validée",
-  school_auto_approved: "École auto-validée (IA)",
-  school_rejected: "École refusée",
-  school_revoked: "École révoquée",
-  school_login: "Connexion école",
-  student_login: "Connexion élève",
-  admin_login: "Connexion admin",
-  issuance: "Émission de diplôme",
-  revocation: "Révocation de diplôme",
-  share_created: "Lien de partage créé",
-  verification: "Vérification",
-};
 
 const TYPE_OPTIONS = [
   { value: "", label: "Tous les événements" },

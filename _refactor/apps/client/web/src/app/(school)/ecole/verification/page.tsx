@@ -36,6 +36,7 @@ import {
   Card,
   Field,
   Input,
+  Modal,
   PageHeader,
   Skeleton,
   useToast,
@@ -202,6 +203,17 @@ export default function VerificationPage() {
 
   const current = state?.current ?? null;
 
+  // Switching away from a PAID postal attempt cancels it: the dispatch fee is
+  // lost and the mailed code becomes useless — never do that on a single click.
+  const [confirmingSwitch, setConfirmingSwitch] = useState(false);
+  const paidPostal =
+    current?.method === "postal" && current.postal?.paymentStatus === "paid";
+
+  function requestSwitch() {
+    if (paidPostal) setConfirmingSwitch(true);
+    else void runAction("switch", switchVerificationMethod);
+  }
+
   return (
     <div className="flex flex-col gap-7">
       <FadeIn>
@@ -249,7 +261,7 @@ export default function VerificationPage() {
           busy={busy}
           code={code}
           setCode={setCode}
-          onSwitch={() => runAction("switch", switchVerificationMethod)}
+          onSwitch={requestSwitch}
           onVerifyDns={() => runAction("dns", verifyDnsOwnership)}
           onSubmitCode={() => runAction("postal", () => submitPostalCode(code))}
           onStartProConnect={async () => {
@@ -265,6 +277,35 @@ export default function VerificationPage() {
           }}
         />
       )}
+
+      {/* Guard: abandoning a paid postal dispatch is irreversible. */}
+      <Modal
+        open={confirmingSwitch}
+        onClose={() => setConfirmingSwitch(false)}
+        title="Abandonner l'envoi postal payé ?"
+        description="Votre courrier de vérification est déjà payé (et peut-être déjà expédié). Changer de méthode annule cette tentative : les frais ne sont pas remboursés et le code du courrier deviendra inutilisable."
+        size="md"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmingSwitch(false)}>
+              Conserver l&apos;envoi postal
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmingSwitch(false);
+                void runAction("switch", switchVerificationMethod);
+              }}
+              leftIcon={<AlertTriangle className="w-4.5 h-4.5" />}
+              style={{
+                background:
+                  "linear-gradient(135deg, #EF4444 0%, #F43F5E 50%, #EC4899 100%)",
+              }}
+            >
+              Changer de méthode
+            </Button>
+          </>
+        }
+      />
     </div>
   );
 }

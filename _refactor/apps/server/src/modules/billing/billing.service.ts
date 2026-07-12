@@ -156,8 +156,19 @@ export async function handleSubscriptionUpdated(sub: Record<string, unknown>): P
   }
 
   const status = typeof sub.status === "string" ? sub.status : null;
-  const periodEndUnix = typeof sub.current_period_end === "number" ? sub.current_period_end : null;
-  const items = (sub.items as { data?: Array<{ price?: { id?: string } }> } | undefined)?.data;
+  const items = (
+    sub.items as
+      | { data?: Array<{ price?: { id?: string }; current_period_end?: number }> }
+      | undefined
+  )?.data;
+  // Stripe API ≥ 2025-03-31 (Basil) moved `current_period_end` from the
+  // subscription root to each item — read both so either API version works.
+  const periodEndUnix =
+    typeof sub.current_period_end === "number"
+      ? sub.current_period_end
+      : typeof items?.[0]?.current_period_end === "number"
+        ? items[0].current_period_end
+        : null;
   const plan = planFromPriceId(items?.[0]?.price?.id) ?? school.plan;
 
   await db

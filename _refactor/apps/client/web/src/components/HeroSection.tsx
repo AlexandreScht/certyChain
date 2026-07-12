@@ -126,7 +126,7 @@ export default function HeroSection() {
       {/* Dot grid backdrop */}
       <div
         aria-hidden
-        className="absolute inset-0 bg-dots opacity-40 [mask-radial-gradient(ellipse_60%_50%_at_50%_40%,black,transparent_80%)]"
+        className="absolute inset-0 bg-dots opacity-40 [mask-image:radial-gradient(ellipse_60%_50%_at_50%_40%,black,transparent_80%)]"
       />
 
       <div className="relative w-full max-w-[1400px] mx-auto px-6 md:px-10 grid lg:grid-cols-12 gap-10 xl:gap-16 items-center">

@@ -26,6 +26,10 @@ import {
 import { FadeIn, SchoolStatusBadge } from "@/components/school";
 import type { SchoolDTO, SchoolStatsDTO } from "@certifychain/contract/dto";
 
+// Inlined at build: the self-service activation exists ONLY in dev (the API
+// answers 403 elsewhere) — never show a button that is guaranteed to fail.
+const IS_DEV = process.env.NODE_ENV !== "production";
+
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("fr-FR", {
@@ -195,8 +199,34 @@ export default function SchoolDashboardPage() {
         </FadeIn>
       )}
 
+      {/* Pending KYB (production): review is on the platform side, nothing to click. */}
+      {!loading && school && school.status === "pending" && !IS_DEV && (
+        <FadeIn>
+          <Card strong className="p-6 sm:p-7">
+            <div className="flex items-center gap-5">
+              <span className="grid place-items-center w-14 h-14 rounded-2xl neumorph-sm text-indigo-600 shrink-0">
+                <ShieldCheck className="w-7 h-7" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h2 className="font-display font-bold text-ink text-lg">
+                    Dossier en cours de validation
+                  </h2>
+                  <SchoolStatusBadge status={school.status} />
+                </div>
+                <p className="text-sm text-muted leading-relaxed max-w-2xl">
+                  Nos équipes vérifient l&apos;identité de votre établissement (KYB).
+                  Vous recevrez un e-mail dès la validation — aucune action n&apos;est
+                  requise de votre côté.
+                </p>
+              </div>
+            </div>
+          </Card>
+        </FadeIn>
+      )}
+
       {/* Activation CTA (dev) — shown only while pending KYB */}
-      {!loading && school && school.status === "pending" && (
+      {!loading && school && school.status === "pending" && IS_DEV && (
         <FadeIn>
           <Card strong glow className="p-6 sm:p-7">
             <div className="flex flex-col sm:flex-row sm:items-center gap-5">
@@ -285,12 +315,12 @@ export default function SchoolDashboardPage() {
               {loading || !school ? (
                 <Skeleton width={140} height={28} />
               ) : school.hasKeys ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-success/12 px-3 py-1.5 text-xs font-semibold text-success">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-success/12 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                   <CheckCircle2 className="w-4 h-4" />
                   Clés PKI générées
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-danger/12 px-3 py-1.5 text-xs font-semibold text-danger">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-danger/12 px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300">
                   <KeyRound className="w-4 h-4" />
                   Clés non générées
                 </span>

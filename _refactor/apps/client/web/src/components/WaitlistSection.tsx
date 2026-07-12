@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, type FormEvent } from "react";
 import Link from "next/link";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { Mail, ArrowRight, CheckCircle2, Building2 } from "lucide-react";
+
+import { joinWaitlist } from "@/lib/api/endpoints";
+import { ApiClientError } from "@/lib/api/client";
 
 if (typeof window !== "undefined") gsap.registerPlugin(ScrollTrigger);
 
@@ -13,6 +16,30 @@ export default function WaitlistSection() {
   const rootRef = useRef<HTMLElement>(null);
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const value = email.trim();
+    if (!value || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      // The email really is forwarded to the team inbox — the "we call you back
+      // within 24h" promise below must never be shown on a dropped submission.
+      await joinWaitlist({ email: value });
+      setSubmitted(true);
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : "Une erreur est survenue. Réessayez dans un instant.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   useGSAP(
     () => {
@@ -95,13 +122,7 @@ export default function WaitlistSection() {
                 Merci ! Notre équipe vous contacte sous 24h ouvrées.
               </div>
             ) : (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (email.trim()) setSubmitted(true);
-                }}
-                className="mt-8 max-w-lg mx-auto"
-              >
+              <form onSubmit={handleSubmit} className="mt-8 max-w-lg mx-auto">
                 <div className="relative neumorph-sm rounded-full p-1.5 flex items-center gap-1 focus-within:ring-2 focus-within:ring-indigo-300 transition-shadow">
                   <label htmlFor="cta-email" className="sr-only">
                     Email professionnel
@@ -120,12 +141,18 @@ export default function WaitlistSection() {
                   />
                   <button
                     type="submit"
-                    className="cta-primary cursor-pointer px-5 py-2.5 rounded-full font-semibold text-sm inline-flex items-center gap-1.5 shrink-0"
+                    disabled={submitting}
+                    className="cta-primary cursor-pointer px-5 py-2.5 rounded-full font-semibold text-sm inline-flex items-center gap-1.5 shrink-0 disabled:opacity-55 disabled:pointer-events-none"
                   >
-                    Rejoindre
+                    {submitting ? "Envoi…" : "Rejoindre"}
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
+                {error && (
+                  <p role="alert" className="mt-3 text-xs font-semibold text-danger">
+                    {error}
+                  </p>
+                )}
                 <p className="mt-3 text-xs text-muted-soft">
                   Aucun engagement · Désinscription en 1 clic · Données
                   hébergées en France

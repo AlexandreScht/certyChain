@@ -105,6 +105,20 @@ export default function AdminLoginPage() {
           >
             Vérifier
           </Button>
+
+          {/* Échappatoire : défi MFA expiré (5 min) ou mauvais compte —
+              sans ce bouton l'utilisateur reste bloqué sur l'écran code. */}
+          <button
+            type="button"
+            onClick={() => {
+              setStage("password");
+              setCode("");
+              setPassword("");
+            }}
+            className="inline-flex items-center justify-center gap-1.5 text-sm font-medium text-muted hover:text-ink transition-colors cursor-pointer"
+          >
+            ← Revenir à la connexion
+          </button>
         </form>
       </AuthShell>
     );

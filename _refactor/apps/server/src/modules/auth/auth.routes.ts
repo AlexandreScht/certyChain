@@ -346,9 +346,10 @@ export const authRoutes = new Hono<AppEnv>()
     }
 
     if (!verifyOtp(code, otp.codeHash)) {
+      // SQL-side increment: two concurrent wrong guesses must count as two.
       await db
         .update(otpCodes)
-        .set({ attempts: otp.attempts + 1 })
+        .set({ attempts: sql`${otpCodes.attempts} + 1` })
         .where(eq(otpCodes.id, otp.id));
       throw fail.otpInvalid();
     }
@@ -660,7 +661,10 @@ export const authRoutes = new Hono<AppEnv>()
       throw fail.otpLocked();
     }
     if (!verifyOtp(code, otp.codeHash)) {
-      await db.update(otpCodes).set({ attempts: otp.attempts + 1 }).where(eq(otpCodes.id, otp.id));
+      await db
+        .update(otpCodes)
+        .set({ attempts: sql`${otpCodes.attempts} + 1` })
+        .where(eq(otpCodes.id, otp.id));
       throw fail.otpInvalid();
     }
     await db.update(otpCodes).set({ consumedAt: new Date() }).where(eq(otpCodes.id, otp.id));

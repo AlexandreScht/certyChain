@@ -1,6 +1,7 @@
 import { ShieldCheck, Twitter, Linkedin, Github } from "lucide-react";
 
-const columns = [
+/** `href: null` = page pas encore publiée → rendue non cliquable (pas de lien mort). */
+const columns: { title: string; links: { label: string; href: string | null }[] }[] = [
   {
     title: "Produit",
     links: [
@@ -13,24 +14,61 @@ const columns = [
   {
     title: "Ressources",
     links: [
-      { label: "Documentation", href: "#" },
-      { label: "API publique", href: "#" },
-      { label: "Registre émetteurs", href: "#" },
-      { label: "Blog", href: "#" },
+      { label: "Documentation", href: null },
+      { label: "API publique", href: null },
+      { label: "Registre émetteurs", href: null },
+      { label: "Blog", href: null },
     ],
   },
   {
     title: "Entreprise",
     links: [
-      { label: "À propos", href: "#" },
+      { label: "À propos", href: null },
       { label: "Sécurité", href: "#securite" },
-      { label: "RGPD", href: "#" },
+      { label: "RGPD", href: null },
       { label: "Contact", href: "#cta" },
     ],
   },
 ];
 
+const legalLinks: { label: string; href: string | null }[] = [
+  { label: "Conditions", href: null },
+  { label: "Confidentialité", href: null },
+  { label: "Cookies", href: null },
+];
+
+/** Lien réel, ou libellé grisé « à venir » quand la cible n'existe pas encore. */
+function FooterLink({
+  label,
+  href,
+  className = "text-sm",
+}: {
+  label: string;
+  href: string | null;
+  className?: string;
+}) {
+  if (!href) {
+    return (
+      <span
+        title="Bientôt disponible"
+        className={`${className} text-muted-soft/70 cursor-default select-none`}
+      >
+        {label}
+      </span>
+    );
+  }
+  return (
+    <a
+      href={href}
+      className={`${className} text-muted hover:text-ink transition-colors cursor-pointer`}
+    >
+      {label}
+    </a>
+  );
+}
+
 export default function Footer() {
+  const year = new Date().getFullYear();
   return (
     <footer className="relative mt-10 border-t border-hairline">
       <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-indigo-500/50 to-transparent" />
@@ -55,14 +93,14 @@ export default function Footer() {
               { Icon: Linkedin, label: "LinkedIn" },
               { Icon: Github, label: "GitHub" },
             ].map(({ Icon, label }) => (
-              <a
+              <span
                 key={label}
-                href="#"
-                aria-label={label}
-                className="w-10 h-10 rounded-full neumorph-pill grid place-items-center text-muted hover:text-indigo-600 transition-colors cursor-pointer"
+                title={`${label} — bientôt disponible`}
+                aria-label={`${label} (bientôt disponible)`}
+                className="w-10 h-10 rounded-full neumorph-pill grid place-items-center text-muted-soft/70 cursor-default"
               >
                 <Icon className="w-4 h-4" />
-              </a>
+              </span>
             ))}
           </div>
         </div>
@@ -76,12 +114,7 @@ export default function Footer() {
               <ul className="space-y-2.5">
                 {c.links.map((l) => (
                   <li key={l.label}>
-                    <a
-                      href={l.href}
-                      className="text-sm text-muted hover:text-ink transition-colors cursor-pointer"
-                    >
-                      {l.label}
-                    </a>
+                    <FooterLink label={l.label} href={l.href} />
                   </li>
                 ))}
               </ul>
@@ -92,11 +125,11 @@ export default function Footer() {
 
       <div className="border-t border-hairline">
         <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-muted">
-          <span>© 2025 CertifyChain · Document propriétaire — diffusion restreinte.</span>
+          <span>© {year} CertifyChain · Document propriétaire — diffusion restreinte.</span>
           <div className="flex items-center gap-5">
-            <a href="#" className="hover:text-ink cursor-pointer">Conditions</a>
-            <a href="#" className="hover:text-ink cursor-pointer">Confidentialité</a>
-            <a href="#" className="hover:text-ink cursor-pointer">Cookies</a>
+            {legalLinks.map((l) => (
+              <FooterLink key={l.label} label={l.label} href={l.href} className="text-xs" />
+            ))}
           </div>
         </div>
       </div>

@@ -74,7 +74,7 @@ export default function WalletLoginPage(): JSX.Element {
   };
 
   return (
-    <main className="relative h-svh overflow-hidden bg-mesh noise">
+    <main className="relative min-h-svh overflow-hidden bg-mesh noise">
       {/* Floating orbs */}
       <div
         aria-hidden
@@ -95,13 +95,14 @@ export default function WalletLoginPage(): JSX.Element {
         }}
       />
 
-      {/* Content layer: centered, no scroll (overflow clipped). */}
-      <div className="relative z-10 h-full overflow-hidden px-5">
+      {/* Content layer: centered; the page can scroll on short viewports
+          (a clipped h-svh would make the card's top/bottom unreachable). */}
+      <div className="relative z-10 min-h-svh px-5">
         <motion.div
           initial={reduce ? { opacity: 0 } : { opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: reduce ? 0 : 0.55, ease: [0.2, 0.8, 0.2, 1] }}
-          className="relative mx-auto flex min-h-full w-full max-w-md flex-col justify-center py-6"
+          className="relative mx-auto flex min-h-svh w-full max-w-md flex-col justify-center py-6"
         >
           <div className="mb-7 flex justify-center">
             <WalletLogo />

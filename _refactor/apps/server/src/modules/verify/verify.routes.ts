@@ -135,9 +135,12 @@ export const verifyRoutes = new Hono<AppEnv>()
     .from(schools)
     .where(eq(schools.id, diploma.schoolId))
     .limit(1);
+  // Only an `approved` issuer is trusted: a school that was rejected/revoked
+  // AFTER approval keeps its keys in DB, but the platform withdrew its trust —
+  // its diplomas must stop verifying (aligned with the login/refresh gates).
   if (
     !schoolRow ||
-    schoolRow.status === "revoked" ||
+    schoolRow.status !== "approved" ||
     !schoolRow.publicKey ||
     !schoolRow.certificate ||
     !schoolRow.approvedAt

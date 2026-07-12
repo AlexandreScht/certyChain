@@ -52,7 +52,14 @@ export default function ProblemSection() {
   useGSAP(
     () => {
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (reduce) return;
+      if (reduce) {
+        // No animation → the counters must still show their FINAL values
+        // (the markup renders "0" as the animation starting point).
+        gsap.utils.toArray<HTMLElement>("[data-counter]").forEach((el) => {
+          el.textContent = `${el.dataset.prefix ?? ""}${el.dataset.counter ?? "0"}${el.dataset.suffix ?? ""}`;
+        });
+        return;
+      }
 
       const counters = gsap.utils.toArray<HTMLElement>("[data-counter]");
       counters.forEach((el) => {

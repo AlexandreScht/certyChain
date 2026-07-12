@@ -83,7 +83,7 @@ export function DiplomaCard({
             <div className="mt-4 flex items-center gap-2 text-[11px] font-mono text-muted">
               <Fingerprint className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
               <span className="truncate">
-                Émis le {formatDate(diploma.issuedAt)} · ZKP Groth16
+                Émis le {formatDate(diploma.issuedAt)} · signé Ed25519
               </span>
             </div>
           </div>

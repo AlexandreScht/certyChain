@@ -17,6 +17,7 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @certifychain/server test",
+    "test:jest": "jest",
     "smoke": "pnpm --filter @certifychain/server smoke",
     "db:generate": "pnpm --filter @certifychain/server db:generate",
     "db:migrate": "pnpm --filter @certifychain/server db:migrate",
@@ -29,6 +30,19 @@
     "docker:dev:down": "docker compose -f docker-compose.yml -f docker-compose-dev.yml down"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/jest": "^30.0.0",
+    "clsx": "2.1.1",
+    "concurrently": "^9.1.0",
+    "framer-motion": "12.38.0",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "lucide-react": "0.469.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tailwind-merge": "3.5.0",
+    "ts-jest": "^29.4.11"
   }
 }

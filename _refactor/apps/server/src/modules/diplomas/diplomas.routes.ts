@@ -62,7 +62,12 @@ export const diplomasRoutes = new Hono<AppEnv>()
     }
     if (q) {
       const like = `%${q}%`;
-      const search = or(ilike(diplomas.holderName, like), ilike(diplomas.programTitle, like));
+      // holderEmail included: the UI advertises "Titulaire, programme, e-mail…".
+      const search = or(
+        ilike(diplomas.holderName, like),
+        ilike(diplomas.programTitle, like),
+        ilike(diplomas.holderEmail, like),
+      );
       if (search) conditions.push(search);
     }
     const where = and(...conditions);
@@ -208,18 +213,46 @@ const CSV_HEADERS = [
   "rncp",
 ] as const;
 
+/** Columns every import must at least provide (in this exact order). */
+const CSV_REQUIRED_COLUMNS = 5; // holderName..issuedAt
+
+/**
+ * Ensures the header row matches the documented column order. Mapping is
+ * positional, so silently accepting reordered/unknown headers would import
+ * WRONG data into cryptographically signed diplomas — reject loudly instead.
+ * Legacy shorter headers are allowed as long as they are an exact prefix
+ * covering the required columns (e.g. the historical 6-column format).
+ */
+function assertCsvHeader(header: string[]): void {
+  const cells = header.map((h) => h.trim());
+  while (cells.length > 0 && cells[cells.length - 1] === "") cells.pop();
+  const ok =
+    cells.length >= CSV_REQUIRED_COLUMNS &&
+    cells.length <= CSV_HEADERS.length &&
+    cells.every((cell, i) => cell.toLowerCase() === CSV_HEADERS[i]?.toLowerCase());
+  if (!ok) {
+    throw fail.validation(
+      `En-têtes CSV invalides : « ${cells.join(",")} ». Attendu (dans cet ordre) : ${CSV_HEADERS.join(",")}`,
+    );
+  }
+}
+
 /**
  * Parses CSV text into an array of objects keyed by CSV_HEADERS, mapping each
  * column positionally. Supports CRLF/LF line endings, commas inside double-quoted
- * fields, and escaped double quotes (""). The first non-empty line is the header.
+ * fields, and escaped double quotes (""). The first non-empty line is the header,
+ * which MUST match {@link CSV_HEADERS} (see {@link assertCsvHeader}).
+ * Exported for unit tests (header-validation regression, audit S3).
  */
-function parseCsv(text: string): Record<string, string>[] {
+export function parseCsv(text: string): Record<string, string>[] {
   const rows = tokenizeCsv(text).filter(
     (cells) => cells.length > 1 || (cells[0] ?? "").trim() !== "",
   );
+  const header = rows[0];
+  if (header) assertCsvHeader(header);
   if (rows.length < 2) return [];
 
-  const [, ...dataRows] = rows; // header consumed but mapped positionally
+  const [, ...dataRows] = rows;
   return dataRows.map((cells) => {
     const record: Record<string, string> = {};
     CSV_HEADERS.forEach((key, idx) => {

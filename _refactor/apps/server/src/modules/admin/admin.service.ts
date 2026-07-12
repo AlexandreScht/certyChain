@@ -15,6 +15,7 @@ import { db } from "../../db/client";
 import {
   type AuditEntry,
   auditLog,
+  auditTypeEnum,
   diplomas,
   refreshSessions,
   schoolAdmins,
@@ -290,6 +291,11 @@ export interface AdminAuditListDTO {
 }
 
 export async function listAuditGlobal(q: ListAuditQuery): Promise<AdminAuditListDTO> {
+  // Free-form filter guarded against the enum: an unknown value would otherwise
+  // raise a Postgres "invalid input value for enum" → 500 instead of a clean 422.
+  if (q.type && !(auditTypeEnum.enumValues as readonly string[]).includes(q.type)) {
+    throw fail.validation("Type d'événement inconnu");
+  }
   const where = q.type ? sql`${auditLog.type} = ${q.type}` : undefined;
 
   const [totalRow] = await db.select({ value: count() }).from(auditLog).where(where);

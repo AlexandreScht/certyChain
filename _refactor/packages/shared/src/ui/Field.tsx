@@ -15,6 +15,7 @@ export interface FieldControlProps {
   id?: string;
   "aria-invalid"?: boolean;
   "aria-describedby"?: string;
+  "aria-required"?: boolean;
 }
 
 export interface FieldProps {
@@ -59,6 +60,8 @@ export function Field({
         id: controlId,
         "aria-invalid": error ? true : undefined,
         "aria-describedby": describedBy,
+        // The visual "(requis)" tag is aria-hidden — expose the requirement to AT here.
+        "aria-required": required || undefined,
       })
     : child;
 

@@ -13,6 +13,7 @@ import type { AdminSchoolListDTO, AdminSchoolListItemDTO } from "@certifychain/c
 const STATUS_OPTIONS = [
   { value: "", label: "Tous les statuts" },
   { value: "pending", label: "En attente" },
+  { value: "provisional", label: "Vérification propriété" },
   { value: "approved", label: "Validées" },
   { value: "rejected", label: "Refusées" },
   { value: "revoked", label: "Révoquées" },

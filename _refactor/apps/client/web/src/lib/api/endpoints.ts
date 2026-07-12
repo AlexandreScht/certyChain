@@ -14,6 +14,7 @@ import { toQueryRecord } from "@certifychain/shared/lib/query";
 import type {
   SchoolLoginInput,
   RegisterSchoolInput,
+  WaitlistInput,
   RequestOtpInput,
   VerifyOtpInput,
   CreateDiplomaInput,
@@ -73,6 +74,11 @@ export function registerSchool(
   input: RegisterSchoolInput,
 ): Promise<{ schoolId: string; status: string }> {
   return unwrap(api.schools.register.$post({ json: input }));
+}
+
+/** Landing waitlist — forwards the prospect's email to the team inbox. */
+export function joinWaitlist(input: WaitlistInput): Promise<{ ok: boolean }> {
+  return unwrap(api.schools.waitlist.$post({ json: input }));
 }
 
 export function getMySchool(): Promise<SchoolDTO> {

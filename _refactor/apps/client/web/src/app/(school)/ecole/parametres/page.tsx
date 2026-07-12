@@ -70,6 +70,27 @@ export default function BillingSettingsPage() {
 
   const status = state?.subscriptionStatus ? STATUS_LABEL[state.subscriptionStatus] : null;
 
+  // A live Stripe subscription exists → plan changes MUST go through the
+  // Billing Portal. A fresh Checkout would create a SECOND subscription
+  // billed in parallel (Checkout never replaces the current one).
+  const hasLiveSubscription = Boolean(
+    state?.currentPlan &&
+      state.subscriptionStatus &&
+      state.subscriptionStatus !== "canceled",
+  );
+
+  async function openPortal() {
+    if (busy) return;
+    setBusy("portal");
+    try {
+      const { url } = await startBillingPortal();
+      window.location.href = url;
+    } catch (err) {
+      if (err instanceof ApiClientError) toastError("Action impossible", err.message);
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-7">
       <FadeIn>
@@ -102,9 +123,11 @@ export default function BillingSettingsPage() {
                     <span
                       className={cn(
                         "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold",
-                        status.tone === "good" && "bg-success/12 text-success",
-                        status.tone === "warn" && "bg-amber-500/15 text-amber-600",
-                        status.tone === "bad" && "bg-danger/12 text-danger",
+                        // -700 in light / -300 in dark: the vivid -500 accents fail
+                        // WCAG AA as text on these pale tints (see Badge.tsx).
+                        status.tone === "good" && "bg-success/12 text-emerald-700 dark:text-emerald-300",
+                        status.tone === "warn" && "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                        status.tone === "bad" && "bg-danger/12 text-red-700 dark:text-red-300",
                       )}
                     >
                       {status.label}
@@ -122,17 +145,7 @@ export default function BillingSettingsPage() {
               {state.hasStripeCustomer && (
                 <Button
                   variant="subtle"
-                  onClick={async () => {
-                    if (busy) return;
-                    setBusy("portal");
-                    try {
-                      const { url } = await startBillingPortal();
-                      window.location.href = url;
-                    } catch (err) {
-                      if (err instanceof ApiClientError) toastError("Action impossible", err.message);
-                      setBusy(null);
-                    }
-                  }}
+                  onClick={openPortal}
                   loading={busy === "portal"}
                   leftIcon={<ExternalLink className="w-4 h-4" />}
                   className="shrink-0"
@@ -158,6 +171,8 @@ export default function BillingSettingsPage() {
               <PlanCard
                 plan={plan}
                 isCurrent={state.currentPlan === plan.id}
+                switchViaPortal={hasLiveSubscription}
+                onPortal={openPortal}
                 busy={busy}
                 onChoose={async () => {
                   if (busy) return;
@@ -183,11 +198,16 @@ export default function BillingSettingsPage() {
 function PlanCard({
   plan,
   isCurrent,
+  switchViaPortal,
+  onPortal,
   busy,
   onChoose,
 }: {
   plan: BillingPlanInfo;
   isCurrent: boolean;
+  /** True when a live subscription exists → changes go through the Billing Portal. */
+  switchViaPortal: boolean;
+  onPortal: () => void;
   busy: string | null;
   onChoose: () => void;
 }) {
@@ -234,6 +254,22 @@ function PlanCard({
           <Button fullWidth variant="subtle" disabled leftIcon={<CheckCircle2 className="w-4.5 h-4.5" />}>
             Offre actuelle
           </Button>
+        ) : switchViaPortal ? (
+          <div className="flex flex-col gap-1.5">
+            <Button
+              fullWidth
+              variant="subtle"
+              onClick={onPortal}
+              loading={busy === "portal"}
+              leftIcon={<ExternalLink className="w-4.5 h-4.5" />}
+            >
+              Changer via le portail
+            </Button>
+            <p className="text-[11px] text-muted-soft text-center">
+              Le changement d&apos;offre se fait dans le portail Stripe (évite un
+              double abonnement).
+            </p>
+          </div>
         ) : plan.available ? (
           <Button
             fullWidth

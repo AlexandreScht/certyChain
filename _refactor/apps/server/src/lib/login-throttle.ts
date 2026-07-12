@@ -44,8 +44,13 @@ export function recordLoginFailure(email: string): void {
   const key = keyOf(email);
   const now = Date.now();
   const b = buckets.get(key) ?? { fails: 0, lockedUntil: 0, lastSeen: now };
-  // A fresh window after a previous lockout has elapsed.
-  if (b.lockedUntil !== 0 && b.lockedUntil <= now) b.fails = 0;
+  // A fresh window after a previous lockout has elapsed. `lockedUntil` must be
+  // cleared too: left in the past, this branch would re-run on EVERY subsequent
+  // failure and the account could never be locked again (unbounded brute force).
+  if (b.lockedUntil !== 0 && b.lockedUntil <= now) {
+    b.fails = 0;
+    b.lockedUntil = 0;
+  }
   b.fails += 1;
   b.lastSeen = now;
   if (b.fails >= LOGIN_THROTTLE.MAX_FAILS) b.lockedUntil = now + LOCK_MS;

@@ -111,6 +111,20 @@ export default function SchoolLoginPage() {
           >
             Vérifier
           </Button>
+
+          {/* Escape hatch: expired MFA challenge (5 min) or wrong account —
+              without this the user is stuck on the code screen. */}
+          <button
+            type="button"
+            onClick={() => {
+              setStage("password");
+              setCode("");
+              setPassword("");
+            }}
+            className="inline-flex items-center justify-center gap-1.5 text-sm font-medium text-muted hover:text-ink transition-colors cursor-pointer"
+          >
+            ← Revenir à la connexion
+          </button>
         </form>
       </AuthShell>
     );

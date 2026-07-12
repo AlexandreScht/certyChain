@@ -293,7 +293,7 @@ export async function verifyDns(school: School): Promise<VerificationStateDTO> {
   if (!dnsTxtMatches(records, row.dnsToken)) {
     await db
       .update(schoolVerifications)
-      .set({ attempts: row.attempts + 1 })
+      .set({ attempts: sql`${schoolVerifications.attempts} + 1` })
       .where(eq(schoolVerifications.id, row.id));
     await recordAudit({ type: "verification_failed", schoolId: school.id, metadata: { method: "dns" } });
     throw fail.verificationFailed(
@@ -374,7 +374,10 @@ export async function submitPostalCode(school: School, code: string): Promise<Ve
     const locked = attempts >= OWNERSHIP_VERIFICATION.POSTAL_MAX_ATTEMPTS;
     await db
       .update(schoolVerifications)
-      .set({ attempts, status: locked ? "failed" : row.status })
+      .set({
+        attempts: sql`${schoolVerifications.attempts} + 1`,
+        status: locked ? "failed" : row.status,
+      })
       .where(eq(schoolVerifications.id, row.id));
     await recordAudit({ type: "verification_failed", schoolId: school.id, metadata: { method: "postal" } });
     throw fail.verificationFailed("Code incorrect.");

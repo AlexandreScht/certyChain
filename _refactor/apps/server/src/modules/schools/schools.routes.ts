@@ -3,13 +3,13 @@ import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { RATE_LIMIT } from "../../config/constants";
 import { env } from "../../config/env";
-import { RegisterSchoolSchema } from "@certifychain/contract/schemas";
+import { RegisterSchoolSchema, WaitlistSchema } from "@certifychain/contract/schemas";
 import { db } from "../../db/client";
 import { type School, schoolAdmins, schools } from "../../db/schema";
 import type { AppEnv } from "../../http/types";
 import { fail } from "../../lib/http-error";
 import { logger } from "../../lib/logger";
-import { sendSchoolReviewNotification } from "../../lib/mailer";
+import { sendSchoolReviewNotification, sendWaitlistNotification } from "../../lib/mailer";
 import { anonymizeIp, clientIp, shortUserAgent } from "../../lib/net";
 import { hashPassword } from "../../lib/password";
 import { getAuth, requireAuth } from "../../middleware/auth";
@@ -37,6 +37,13 @@ function isUniqueViolation(e: unknown): boolean {
   );
 }
 
+/** Name of the violated unique constraint/index, when the driver exposes it. */
+function violatedConstraint(e: unknown): string {
+  const err = e as { constraint_name?: unknown; constraint?: unknown } | null;
+  const name = err?.constraint_name ?? err?.constraint;
+  return typeof name === "string" ? name : "";
+}
+
 export const schoolsRoutes = new Hono<AppEnv>()
 
   /** POST /schools/register — self-service school registration (pending approval). */
@@ -57,35 +64,44 @@ export const schoolsRoutes = new Hono<AppEnv>()
       throw fail.conflict("Un établissement est déjà enregistré avec ce SIRET.");
     }
 
+    // Hash outside the transaction (scrypt is slow — don't hold a tx open for it).
+    const passwordHash = await hashPassword(body.adminPassword);
+
+    // School + admin created in ONE transaction: if the admin insert loses a
+    // race on the unique lower(email) index, everything rolls back — no orphan
+    // school squatting the SIRET forever with no account able to log into it.
     let school: School;
     try {
-      const [row] = await db
-        .insert(schools)
-        .values({
-          name: body.name,
-          siret: body.siret,
-          uai: body.uai ?? null,
-          city: body.city ?? null,
-          contactEmail: body.contactEmail,
-          status: "pending",
-        })
-        .returning();
-      if (!row) throw fail.internal();
-      school = row;
+      school = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(schools)
+          .values({
+            name: body.name,
+            siret: body.siret,
+            uai: body.uai ?? null,
+            city: body.city ?? null,
+            contactEmail: body.contactEmail,
+            status: "pending",
+          })
+          .returning();
+        if (!row) throw fail.internal();
+        await tx.insert(schoolAdmins).values({
+          schoolId: row.id,
+          email: body.adminEmail,
+          passwordHash,
+          fullName: body.adminFullName ?? null,
+        });
+        return row;
+      });
     } catch (e) {
-      // Lost the race: another registration inserted this SIRET first.
+      // Lost a race: map the violated index to the right user-facing 409.
       if (isUniqueViolation(e)) {
-        throw fail.conflict("Un établissement est déjà enregistré avec ce SIRET.");
+        throw violatedConstraint(e).includes("admins")
+          ? fail.conflict("Un compte existe déjà pour cet e-mail")
+          : fail.conflict("Un établissement est déjà enregistré avec ce SIRET.");
       }
       throw e;
     }
-
-    await db.insert(schoolAdmins).values({
-      schoolId: school.id,
-      email: body.adminEmail,
-      passwordHash: await hashPassword(body.adminPassword),
-      fullName: body.adminFullName ?? null,
-    });
 
     await recordAudit({
       type: "school_registered",
@@ -149,6 +165,22 @@ export const schoolsRoutes = new Hono<AppEnv>()
     }
 
     return c.json({ schoolId: school.id, status }, 201);
+  },
+  )
+
+/** POST /schools/waitlist — landing-page pilot waitlist (public, no account).
+    The prospect's email is forwarded to the team inbox — the landing promises a
+    callback within 24h, so losing the lead silently is not an option. */
+  .post(
+  "/waitlist",
+  rateLimit({ key: "waitlist", ...RATE_LIMIT.WAITLIST_IP }),
+  zValidator("json", WaitlistSchema),
+  async (c) => {
+    const { email } = c.req.valid("json");
+    // Mail failures are logged by the mailer, never thrown — always answer ok
+    // (the lead is also visible in the API logs via mail.sent/mail.dropped).
+    await sendWaitlistNotification(env.ADMIN_NOTIFY_EMAIL, email);
+    return c.json({ ok: true });
   },
   )
 
