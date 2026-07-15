@@ -161,6 +161,32 @@ export async function sendWaitlistNotification(
   });
 }
 
+/**
+ * Alerts the platform admin that a school flagged a transparency-journal entry it
+ * did not issue (v2.md §V3-6). Issuance is already frozen server-side; the admin
+ * investigates and either unfreezes or revokes the school.
+ */
+export async function sendJournalReportNotification(
+  to: string,
+  info: {
+    schoolName: string;
+    diplomaId: string;
+    reason: string | null;
+    adminUrl: string;
+  },
+): Promise<void> {
+  await sendMail({
+    to,
+    subject: `CertifyChain — Signalement journal de transparence : ${info.schoolName}`,
+    text:
+      `« ${info.schoolName} » signale une émission qu'elle n'a pas réalisée.\n\n` +
+      `Diplôme concerné : ${info.diplomaId}\n` +
+      `${info.reason ? `Motif : ${info.reason}\n` : ""}` +
+      `Les émissions de cet établissement sont GELÉES automatiquement.\n\n` +
+      `Instruire le signalement (dégeler ou révoquer) : ${info.adminUrl}`,
+  });
+}
+
 /** Alerts the platform admin that a new school needs manual validation. */
 export async function sendSchoolReviewNotification(
   to: string,

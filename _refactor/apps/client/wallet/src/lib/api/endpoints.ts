@@ -13,6 +13,7 @@ import { api, unwrap } from "./client";
 
 import type { RequestOtpInput, VerifyOtpInput, CreateShareLinkInput } from "@certifychain/contract/schemas";
 import type {
+  EudiOfferDTO,
   SessionDTO,
   WalletDiplomaDTO,
   ShareLinkDTO,
@@ -73,6 +74,13 @@ export function getWalletDiplomas(): Promise<WalletDiplomaDTO[]> {
 
 export function getWalletDiploma(id: string): Promise<WalletDiplomaDTO> {
   return unwrap(api.wallet.diplomas[":id"].$get({ param: { id } }));
+}
+
+/** Create a short-lived, single-use OpenID4VCI credential offer. */
+export function createEudiOffer(id: string): Promise<EudiOfferDTO> {
+  return unwrap(
+    api.wallet.diplomas[":id"]["eudi-offer"].$post({ param: { id } }),
+  );
 }
 
 export function listShareLinks(id: string): Promise<ShareLinkDTO[]> {

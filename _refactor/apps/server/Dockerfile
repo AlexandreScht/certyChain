@@ -21,9 +21,11 @@ COPY apps/client/wallet/package.json ./apps/client/wallet/package.json
 COPY apps/client/admin/package.json ./apps/client/admin/package.json
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 
-# Sources needed by the server build: the API itself + the contract package
-# (bundled into the single CJS file by tsup's `noExternal`).
+# Sources needed by the server build: the API itself + the contract and shared
+# packages (bundled into the single CJS file by tsup's `noExternal` — the server
+# imports `@certifychain/shared/crypto/verify-bundle` since V1).
 COPY packages/contract ./packages/contract
+COPY packages/shared ./packages/shared
 COPY apps/server ./apps/server
 RUN pnpm --filter @certifychain/server build
 

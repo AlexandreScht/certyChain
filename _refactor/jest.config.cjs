@@ -31,6 +31,9 @@ const workspaceModuleMapper = {
   "^@certifychain/contract/(.*)$": "<rootDir>/packages/contract/src/$1",
   "^@certifychain/shared/ui$": "<rootDir>/packages/shared/src/ui/index.ts",
   "^@certifychain/shared/(.*)$": "<rootDir>/packages/shared/src/$1",
+  // @noble/ed25519 est ESM-only mais embarque sa source .ts : on la mappe pour
+  // que ts-jest la transpile (le require() CJS de l'ESM échouerait).
+  "^@noble/ed25519$": "<rootDir>/packages/shared/node_modules/@noble/ed25519/index.ts",
 };
 
 /**
@@ -52,6 +55,11 @@ const base = {
   transform: { "^.+\\.tsx?$": tsTransform },
   moduleNameMapper: workspaceModuleMapper,
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json"],
+  // node_modules n'est jamais transformé SAUF la source .ts de @noble/ed25519
+  // (voir workspaceModuleMapper). Le segment .pnpm est exclu du match pour que
+  // le chemin réel du store (node_modules/.pnpm/…/node_modules/@noble/…) reste
+  // transformable ; seuls les .ts/.tsx sont concernés par la transform de toute façon.
+  transformIgnorePatterns: ["[\\\\/]node_modules[\\\\/](?!\\.pnpm[\\\\/]|@noble[\\\\/])"],
   // Les builds Next (.next/standalone) recopient les package.json des apps →
   // collisions haste-map. Jamais des cibles de test : ignorés.
   modulePathIgnorePatterns: ["[\\\\/]\\.next[\\\\/]"],

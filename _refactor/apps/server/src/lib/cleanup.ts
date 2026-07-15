@@ -2,6 +2,11 @@ import { lt, or, isNotNull } from "drizzle-orm";
 import { db } from "../db/client";
 import { auditLog, otpCodes, verificationNonces } from "../db/schema";
 import { logger } from "./logger";
+import {
+  purgeExpiredCdcIdentities,
+  purgeExpiredCdcRejectReasons,
+} from "../modules/accrochage/accrochage.service";
+import { purgeExpiredVcOffers } from "../modules/vc/vc.service";
 
 /**
  * Scheduled data hygiene (security audit findings #3, #12).
@@ -34,10 +39,17 @@ export async function purgeExpired(): Promise<void> {
     .where(lt(auditLog.createdAt, auditCutoff))
     .returning({ id: auditLog.id });
 
+  const cdcIdentities = await purgeExpiredCdcIdentities(now);
+  const cdcRejectReasons = await purgeExpiredCdcRejectReasons(now);
+  const vcOffers = await purgeExpiredVcOffers(now);
+
   logger.info("cleanup.purged", {
     nonces: nonces.length,
     otpCodes: otps.length,
     auditRows: audits.length,
+    cdcIdentities,
+    cdcRejectReasons,
+    vcOffers,
   });
 }
 

@@ -216,7 +216,8 @@ export default function WalletLoginPage(): JSX.Element {
         </Card>
 
         <p className="mt-6 text-center text-xs text-muted-soft">
-          Vos diplômes sont protégés par des preuves à divulgation nulle (ZKP).
+          Vos diplômes sont signés par votre école. Vous seul décidez de ce que
+          vous montrez.
         </p>
         <p className="mt-2 text-center text-xs text-muted-soft">
           Premier diplôme reçu ? Utilisez le lien de récupération envoyé par

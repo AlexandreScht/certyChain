@@ -76,6 +76,8 @@ services:
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       WALLET_ORIGIN: ${WALLET_ORIGIN:-http://localhost:3001}
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:3002}
+      # Identité publique OpenID4VCI de la plateforme (HTTPS obligatoire en prod).
+      PUBLIC_API_ORIGIN: ${PUBLIC_API_ORIGIN:-http://localhost:4000}
       # Sessions
       ACCESS_TOKEN_TTL: "900"
       REFRESH_TOKEN_TTL: "2592000"
@@ -91,6 +93,20 @@ services:
       # Rate limiting (par IP / fenêtre)
       RATE_LIMIT_WINDOW: "60"
       RATE_LIMIT_MAX: "100"
+      CDC_RETENTION_DAYS: ${CDC_RETENTION_DAYS:-30}
+      VC_EXPORT_ENABLED: ${VC_EXPORT_ENABLED:-false}
+      # ── V2 — Couture Signer (clés d'école hors-base) ───────────────────────
+      # 'envelope' (défaut) = blob AES-GCM en base ; 'kms' = HashiCorp Vault
+      # Transit. VAULT_ADDR/MOUNT/PREFIX sont NON sensibles (surchargeables) ;
+      # VAULT_TOKEN est un secret et provient du `.env` (env_file ci-dessus).
+      SIGNER_KIND: ${SIGNER_KIND:-envelope}
+      VAULT_ADDR: ${VAULT_ADDR:-}
+      VAULT_TRANSIT_MOUNT: ${VAULT_TRANSIT_MOUNT:-transit}
+      VAULT_KEY_PREFIX: ${VAULT_KEY_PREFIX:-certifychain-school}
+      # ── V3 — Ancrage du journal de transparence (OpenTimestamps → Bitcoin) ──
+      # Liste CSV de calendriers publics (NON sensible). Vide → ancrage désactivé
+      # (dégradation propre : checkpoints signés mais sans preuve Bitcoin).
+      OTS_CALENDARS: ${OTS_CALENDARS:-https://a.pool.opentimestamps.org,https://b.pool.opentimestamps.org,https://finney.calendar.eternitywall.com}
       # Applique les migrations Drizzle au démarrage (pratique en conteneur).
       MIGRATE_ON_START: "true"
       # Registre SIRENE (INSEE) — base + header (la CLÉ est un secret du .env).

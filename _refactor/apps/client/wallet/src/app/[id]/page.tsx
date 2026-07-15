@@ -15,6 +15,7 @@ import {
   useToast,
 } from "@certifychain/shared/ui";
 import { DiplomaDetailCard } from "@/components/wallet/DiplomaDetailCard";
+import { EudiExportAction } from "@/components/wallet/EudiExportAction";
 import { SharePanel } from "@/components/wallet/SharePanel";
 
 interface PageProps {
@@ -127,7 +128,13 @@ export default function WalletDiplomaPage({ params }: PageProps): JSX.Element {
 
       {state.status === "ready" && (
         <div className="grid gap-8 lg:grid-cols-2 items-start">
-          <DiplomaDetailCard diploma={state.diploma} />
+          <div className="flex flex-col gap-5">
+            <DiplomaDetailCard diploma={state.diploma} />
+            <EudiExportAction
+              diplomaId={state.diploma.id}
+              available={state.diploma.eudiExportAvailable}
+            />
+          </div>
           <SharePanel diplomaId={state.diploma.id} initialLinks={state.shareLinks} />
         </div>
       )}

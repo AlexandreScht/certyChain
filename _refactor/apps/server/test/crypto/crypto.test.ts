@@ -19,7 +19,7 @@ import {
   verifyEd25519,
   verifySchoolCertificate,
 } from "../../src/crypto/keys";
-import { proofEngine } from "../../src/crypto/proof-engine";
+import { ed25519NonceEngine as proofEngine } from "../../src/crypto/proof-engine";
 
 const basePayload: DiplomaPayload = {
   id: "22222222-2222-4222-8222-222222222222",

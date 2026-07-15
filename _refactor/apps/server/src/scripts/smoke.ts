@@ -19,11 +19,37 @@
  * same trick as the seed) and to Mailpit's REST API (capture OTP/claim mails).
  * Exit code 0 = every check passed.
  */
+import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import {
+  SignJWT,
+  decodeProtectedHeader,
+  exportJWK,
+  generateKeyPair,
+  type JWK,
+} from "jose";
+import type {
+  LogConsistencyDTO,
+  ProofBundleDTO,
+  TransparencyProofDTO,
+} from "@certifychain/contract/dto";
+import { verifyProofBundle } from "@certifychain/shared/crypto/verify-bundle";
+import { verifyConsistency, verifyInclusion } from "@certifychain/shared/crypto/merkle";
+import { verifyTransparency } from "@certifychain/shared/crypto/verify-transparency";
 import { keyVault } from "../crypto/envelope";
 import { db, sqlClient } from "../db/client";
-import { diplomas, otpCodes, platformAdmins, schoolAdmins, schools, shareLinks } from "../db/schema";
+import {
+  cdcExportItems,
+  diplomas,
+  otpCodes,
+  platformAdmins,
+  schoolAdmins,
+  schools,
+  shareLinks,
+} from "../db/schema";
 import { generateTotp } from "../lib/totp";
+import { verifySdJwtVc } from "../modules/vc/sd-jwt";
+import { verifyStatusListToken } from "../modules/vc/status-list";
 
 /* ── Config (overridable via env) ───────────────────────────────────────── */
 
@@ -256,6 +282,436 @@ async function runVerify(token: string, reuseNonce?: string): Promise<VerifyOutc
   return { result: body.result, holderName: body.diploma?.holderName, status: proof.status, nonce };
 }
 
+/** Comme runVerify, mais rend le corps brut (inspection du bundle + test de fuite). */
+async function runVerifyRaw(
+  token: string,
+): Promise<{ status: number; text: string; parsed: unknown }> {
+  const anon = new Browser(API);
+  const challenge = await anon.req(`/verify/${token}/challenge`, { json: {} });
+  if (challenge.status !== 200) {
+    return { status: challenge.status, text: challenge.text, parsed: null };
+  }
+  const { nonce } = challenge.json<{ nonce: string }>();
+  const proof = await anon.req(`/verify/${token}/proof`, { json: { nonce } });
+  let parsed: unknown = null;
+  try {
+    parsed = JSON.parse(proof.text);
+  } catch {
+    /* corps non-JSON : parsed reste null */
+  }
+  return { status: proof.status, text: proof.text, parsed };
+}
+
+interface EudiStatusProbe {
+  uri: string;
+  index: number;
+  issuer: string;
+}
+
+async function fetchIssuerJwk(issuer: string, kid: string): Promise<JWK | null> {
+  const response = await fetch(`${issuer}/.well-known/jwt-vc-issuer`);
+  if (!response.ok) return null;
+  const body = (await response.json()) as { jwks?: { keys?: JWK[] } };
+  return body.jwks?.keys?.find((key) => key.kid === kid) ?? null;
+}
+
+async function statusBit(probe: EudiStatusProbe): Promise<number | null> {
+  const response = await fetch(probe.uri, {
+    headers: { accept: "application/statuslist+jwt" },
+  });
+  if (!response.ok) return null;
+  const token = await response.text();
+  const header = decodeProtectedHeader(token);
+  const key = typeof header.kid === "string" ? await fetchIssuerJwk(probe.issuer, header.kid) : null;
+  if (!key) return null;
+  const verified = await verifyStatusListToken(token, {
+    issuerPublicKey: key,
+    issuer: probe.issuer,
+    uri: probe.uri,
+  });
+  return verified.statuses[probe.index] ?? null;
+}
+
+/** Complete pre-authorized OpenID4VCI flow against the real composed API. */
+async function runEudiFlow(
+  browser: Browser,
+  diplomaId: string,
+): Promise<EudiStatusProbe | null> {
+  const created = await browser.req(`/wallet/diplomas/${diplomaId}/eudi-offer`, { json: {} });
+  const createdBody =
+    created.status === 201
+      ? created.json<{ offerDeepLink: string; txCode: string; expiresAt: string }>()
+      : null;
+  const createdOk = check(
+    "EUDI : offre interne + tx_code → 201",
+    Boolean(
+      createdBody &&
+        createdBody.offerDeepLink.startsWith("openid-credential-offer://") &&
+        /^\d{5}$/.test(createdBody.txCode),
+    ),
+    `HTTP ${created.status} ${created.text.slice(0, 160)}`,
+  );
+  if (!createdOk || !createdBody) return null;
+
+  const offerUri = new URL(createdBody.offerDeepLink).searchParams.get("credential_offer_uri");
+  const offerResponse = offerUri ? await fetch(offerUri) : null;
+  const offer =
+    offerResponse?.ok
+      ? ((await offerResponse.json()) as {
+          credential_issuer: string;
+          credential_configuration_ids: string[];
+          grants: Record<string, { "pre-authorized_code": string }>;
+        })
+      : null;
+  const grant = offer?.grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"];
+  const authorizationMetadataResponse = offer
+    ? await fetch(`${offer.credential_issuer}/.well-known/oauth-authorization-server`)
+    : null;
+  const authorizationMetadata = authorizationMetadataResponse?.ok
+    ? ((await authorizationMetadataResponse.json()) as {
+        "pre-authorized_grant_anonymous_access_supported"?: boolean;
+      })
+    : null;
+  const offerOk = check(
+    "EUDI : credential_offer_uri retourne l’offre standard",
+    Boolean(
+      offer &&
+        offer.credential_configuration_ids.includes("certifychain-diploma") &&
+        grant?.["pre-authorized_code"] &&
+        authorizationMetadata?.["pre-authorized_grant_anonymous_access_supported"] === true,
+    ),
+    offerResponse
+      ? `offer ${offerResponse.status} · metadata ${authorizationMetadataResponse?.status ?? "absente"}`
+      : "URI absente",
+  );
+  if (!offerOk || !offer || !grant) return null;
+
+  const nonceResponse = await fetch(`${offer.credential_issuer}/vc/nonce`, { method: "POST" });
+  const nonce = nonceResponse.ok
+    ? ((await nonceResponse.json()) as { c_nonce?: string }).c_nonce
+    : undefined;
+  if (!check("EUDI : nonce endpoint retourne c_nonce", Boolean(nonce), `HTTP ${nonceResponse.status}`) || !nonce) {
+    return null;
+  }
+
+  const tokenForm = new URLSearchParams({
+    grant_type: "urn:ietf:params:oauth:grant-type:pre-authorized_code",
+    "pre-authorized_code": grant["pre-authorized_code"],
+    tx_code: createdBody.txCode,
+  });
+  const tokenResponse = await fetch(`${offer.credential_issuer}/vc/oauth/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: tokenForm,
+  });
+  const tokenBody = tokenResponse.ok
+    ? ((await tokenResponse.json()) as { access_token?: string; token_type?: string })
+    : null;
+  if (
+    !check(
+      "EUDI : échange pre-authorized code → Bearer",
+      Boolean(tokenBody?.access_token && tokenBody.token_type === "Bearer"),
+      `HTTP ${tokenResponse.status}`,
+    ) ||
+    !tokenBody?.access_token
+  ) {
+    return null;
+  }
+
+  const replayResponse = await fetch(`${offer.credential_issuer}/vc/oauth/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: tokenForm,
+  });
+  const replayBody = (await replayResponse.json()) as { error?: string };
+  check(
+    "EUDI : rejeu du pre-authorized code → invalid_grant",
+    replayResponse.status === 400 && replayBody.error === "invalid_grant",
+    `HTTP ${replayResponse.status} ${JSON.stringify(replayBody)}`,
+  );
+
+  const holder = await generateKeyPair("ES256", { extractable: true });
+  const holderJwk = await exportJWK(holder.publicKey);
+  const proof = await new SignJWT({ nonce })
+    .setProtectedHeader({ alg: "ES256", typ: "openid4vci-proof+jwt", jwk: holderJwk })
+    .setAudience(offer.credential_issuer)
+    .setIssuedAt()
+    .sign(holder.privateKey);
+  const credentialResponse = await fetch(`${offer.credential_issuer}/vc/credential`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${tokenBody.access_token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      credential_configuration_id: "certifychain-diploma",
+      proofs: { jwt: [proof] },
+    }),
+  });
+  const credentialBody = credentialResponse.ok
+    ? ((await credentialResponse.json()) as { credentials?: Array<{ credential?: string }> })
+    : null;
+  const credential = credentialBody?.credentials?.[0]?.credential;
+  let probe: EudiStatusProbe | null = null;
+  let credentialValid = false;
+  if (credential) {
+    const issuerJwt = credential.split("~")[0];
+    if (issuerJwt) {
+      const header = decodeProtectedHeader(issuerJwt);
+      const kid = typeof header.kid === "string" ? header.kid : null;
+      const key = kid
+        ? await fetchIssuerJwk(offer.credential_issuer, kid)
+        : null;
+      if (key && kid) {
+        const verified = await verifySdJwtVc(credential, {
+          issuerPublicKey: key,
+          issuer: offer.credential_issuer,
+          issuerKid: kid,
+        });
+        const reference = verified.payload.status as
+          | { status_list?: { idx?: number; uri?: string } }
+          | undefined;
+        if (
+          verified.disclosedClaims.diploma_id === diplomaId &&
+          typeof reference?.status_list?.idx === "number" &&
+          typeof reference.status_list.uri === "string"
+        ) {
+          credentialValid = true;
+          probe = {
+            uri: reference.status_list.uri,
+            index: reference.status_list.idx,
+            issuer: offer.credential_issuer,
+          };
+        }
+      }
+    }
+  }
+  check(
+    "EUDI : Credential Response contient un dc+sd-jwt vérifiable et ses disclosures",
+    credentialResponse.status === 200 && Boolean(credential?.includes("~")) && credentialValid,
+    `HTTP ${credentialResponse.status}`,
+  );
+  if (!probe) return null;
+
+  check(
+    "EUDI : status list initiale = valide (bit 0)",
+    (await statusBit(probe)) === 0,
+  );
+  return probe;
+}
+
+function syntheticNir(offset = 0): string {
+  // Unique, fabricated stem: it is never sourced from or tied to a real person.
+  const stem = `1${(Date.now() + offset).toString().padStart(12, "0").slice(-12)}`;
+  const modulus = BigInt(97);
+  const key = Number(modulus - (BigInt(stem) % modulus));
+  return `${stem}${key.toString().padStart(2, "0")}`;
+}
+
+async function resolveUnfinishedCdcBatches(browser: Browser): Promise<void> {
+  const response = await browser.req("/cdc/exports?page=1&pageSize=100");
+  if (response.status !== 200) return;
+  const batches = response.json<{ items: Array<{ id: string; status: string }> }>().items;
+  for (const batch of batches) {
+    if (batch.status === "generated") {
+      await browser.req(`/cdc/exports/${batch.id}/cancel`, { json: {} });
+    } else if (batch.status === "submitted") {
+      const items = await db
+        .select({ id: cdcExportItems.id })
+        .from(cdcExportItems)
+        .where(eq(cdcExportItems.exportId, batch.id));
+      const content = `<compteRendu><passagesOK>${items
+        .map((item) => `<passage><idTechnique>${item.id}</idTechnique></passage>`)
+        .join("")}</passagesOK></compteRendu>`;
+      await browser.req(`/cdc/exports/${batch.id}/crt`, { json: { content } });
+    }
+  }
+}
+
+async function runCdcFlow(
+  adminBrowser: Browser,
+  schoolBrowser: Browser,
+  schoolId: string,
+): Promise<void> {
+  const activation = await adminBrowser.req(`/admin/schools/${schoolId}/cdc`, {
+    json: { enabled: true },
+  });
+  check(
+    "CDC : activation plateforme → module actif",
+    activation.status === 200 && activation.json<{ cdcEnabled?: boolean }>().cdcEnabled === true,
+    `HTTP ${activation.status} ${activation.text.slice(0, 140)}`,
+  );
+
+  await resolveUnfinishedCdcBatches(schoolBrowser);
+  const settings = await schoolBrowser.req("/cdc/settings", {
+    method: "PUT",
+    json: {
+      certificateurSiret: "12345678901234",
+      contactEmail: "cdc-smoke@ecole-demo.fr",
+      emitterIdClient: "EMET0001",
+      certificateurIdClient: "CERT0001",
+      contractId: "SMOKE-CDC",
+    },
+  });
+  check(
+    "CDC : configuration officielle enregistrée",
+    settings.status === 200 && settings.json<{ emitterIdClient?: string }>().emitterIdClient === "EMET0001",
+    `HTTP ${settings.status} ${settings.text.slice(0, 140)}`,
+  );
+
+  const issueOne = await schoolBrowser.req("/diplomas", {
+    json: {
+      holderName: "Titulaire CDC Smoke A",
+      holderEmail: `cdc.a.${RUN_ID}@ecole-demo.fr`,
+      programTitle: "Certification CDC E2E",
+      mention: "Admis",
+      rncp: "RNCP99998",
+      issuedAt: "2026-07-02",
+      externalId: `CDC-SMOKE-A-${RUN_ID}`,
+    },
+  });
+  const issueTwo = await schoolBrowser.req("/diplomas", {
+    json: {
+      holderName: "Titulaire CDC Smoke B",
+      holderEmail: `cdc.b.${RUN_ID}@ecole-demo.fr`,
+      programTitle: "Certification CDC E2E",
+      mention: "Admis",
+      rncp: "RNCP99998",
+      issuedAt: "2026-07-03",
+      externalId: `CDC-SMOKE-B-${RUN_ID}`,
+    },
+  });
+  const diplomaIds = [issueOne, issueTwo]
+    .map((response) => response.status === 201 ? response.json<{ id: string }>().id : null)
+    .filter((id): id is string => id !== null);
+  const eligible = await schoolBrowser.req("/cdc/eligible");
+  const eligibleRows = eligible.status === 200
+    ? eligible.json<Array<{ id: string; identityComplete: boolean }>>()
+    : [];
+  check(
+    "CDC : 2 diplômes RNCP actifs éligibles, identités initialement absentes",
+    diplomaIds.length === 2 && diplomaIds.every((id) =>
+      eligibleRows.some((row) => row.id === id && row.identityComplete === false)),
+    `issues ${issueOne.status}/${issueTwo.status} · eligible ${eligible.status}`,
+  );
+  const diplomaIdOne = diplomaIds[0];
+  const diplomaIdTwo = diplomaIds[1];
+  if (!diplomaIdOne || !diplomaIdTwo) return;
+
+  const nirs = [syntheticNir(0), syntheticNir(1)];
+  const identityOne = await schoolBrowser.req("/cdc/identities", {
+    json: {
+      diplomaId: diplomaIdOne,
+      nir: nirs[0],
+      birthLastName: "NOM-FABRIQUE-SMOKE-A",
+      obtentionMethod: "PAR_ADMISSION",
+    },
+  });
+  const identityTwo = await schoolBrowser.req("/cdc/identities", {
+    json: {
+      diplomaId: diplomaIdTwo,
+      nir: nirs[1],
+      birthLastName: "NOM-FABRIQUE-SMOKE-B",
+      obtentionMethod: "PAR_ADMISSION",
+    },
+  });
+
+  const generated = await schoolBrowser.req("/cdc/exports", {
+    json: { diplomaIds },
+  });
+  const generatedBody = generated.status === 201
+    ? generated.json<{ id: string; fileSha256: string; counts: { total: number } }>()
+    : null;
+  const exportId = generatedBody?.id ?? null;
+  const file = exportId ? await schoolBrowser.req(`/cdc/exports/${exportId}/file`) : null;
+  const itemIds = file
+    ? Array.from(file.text.matchAll(/<cpf:idTechnique>([^<]+)<\/cpf:idTechnique>/g), (match) => match[1])
+        .filter((id): id is string => id !== undefined)
+    : [];
+  const downloadedSha256 = file
+    ? createHash("sha256").update(file.text, "utf8").digest("hex")
+    : null;
+  check(
+    "CDC : lot de 2 généré, XML téléchargeable et SHA-256 identique au DTO",
+    generated.status === 201 &&
+      generatedBody?.counts.total === 2 &&
+      file?.status === 200 &&
+      file.headers.get("content-type")?.startsWith("application/xml") === true &&
+      generatedBody.fileSha256 === file.headers.get("x-content-sha256") &&
+      generatedBody.fileSha256 === downloadedSha256 &&
+      itemIds.length === 2,
+    `generate ${generated.status} · file ${file?.status ?? "absent"}`,
+  );
+  if (!exportId || itemIds.length !== 2) return;
+
+  const submitted = await schoolBrowser.req(`/cdc/exports/${exportId}/submitted`, { json: {} });
+  const crt = await schoolBrowser.req(`/cdc/exports/${exportId}/crt`, {
+    json: {
+      content: `<compteRendu><passagesOK>${itemIds
+        .map((itemId) => `<passage><idTechnique>${itemId}</idTechnique></passage>`)
+        .join("")}</passagesOK></compteRendu>`,
+    },
+  });
+  const crtBody = crt.status === 200
+    ? crt.json<{ status?: string; counts?: { accepted?: number; pending?: number } }>()
+    : null;
+  check(
+    "CDC : dépôt puis CRT accepté résolvent atomiquement le lot",
+    submitted.status === 200 &&
+      crt.status === 200 &&
+      crtBody?.status === "accepted" &&
+      crtBody.counts?.accepted === 2 &&
+      crtBody.counts.pending === 0,
+    `submitted ${submitted.status} · crt ${crt.status} ${crt.text.slice(0, 140)}`,
+  );
+
+  const changedSettings = await schoolBrowser.req("/cdc/settings", {
+    method: "PUT",
+    json: {
+      certificateurSiret: "12345678901234",
+      contactEmail: "cdc-smoke@ecole-demo.fr",
+      emitterIdClient: "EMET0002",
+      certificateurIdClient: "CERT0002",
+      contractId: "SMOKE-CDC-V2",
+    },
+  });
+  const historicalFile = await schoolBrowser.req(`/cdc/exports/${exportId}/file`);
+  check(
+    "CDC : un lot résolu reste byte-identique après changement de configuration",
+    changedSettings.status === 200 &&
+      historicalFile.status === 200 &&
+      historicalFile.text === file?.text &&
+      historicalFile.headers.get("x-content-sha256") === file?.headers.get("x-content-sha256"),
+    `settings ${changedSettings.status} · file ${historicalFile.status}`,
+  );
+
+  const jsonResponses = [
+    activation,
+    settings,
+    issueOne,
+    issueTwo,
+    eligible,
+    identityOne,
+    identityTwo,
+    generated,
+    submitted,
+    crt,
+    changedSettings,
+  ];
+  const leakedNir = jsonResponses.some((response) =>
+    /"nir"\s*:/i.test(response.text) || nirs.some((nir) => response.text.includes(nir)),
+  );
+  check(
+    "CDC : 2 identités chiffrées, aucun NIR dans aucune réponse JSON",
+    identityOne.status === 201 &&
+      identityTwo.status === 201 &&
+      identityOne.json<{ identityComplete?: boolean }>().identityComplete === true &&
+      identityTwo.json<{ identityComplete?: boolean }>().identityComplete === true &&
+      !leakedNir,
+    `identities ${identityOne.status}/${identityTwo.status}`,
+  );
+}
+
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
 async function main(): Promise<void> {
@@ -341,7 +797,10 @@ async function main(): Promise<void> {
         holderEmail: CLAIM_SCHOOL_EMAIL,
         programTitle: "Licence Test E2E",
         mention: "Bien",
-        issuedAt: "2026-07-01",
+        rncp: "RNCP99999",
+        // Date distinctive : le test de fuite par sous-chaîne (V1 SD) cherche cette
+        // valeur dans la réponse — elle ne doit pouvoir venir d'aucun autre champ.
+        issuedAt: "2019-03-27",
         externalId: `SMOKE-${RUN_ID}`,
       },
     });
@@ -408,10 +867,184 @@ async function main(): Promise<void> {
           check("lien révoqué → not_found", vRevokedLink.result === "not_found", vRevokedLink.result);
         }
 
+        /* V1 — divulgation sélective native (ed25519-sd-v2) */
+        section("Divulgation sélective (ed25519-sd-v2)");
+        // Oracle de révocation AVANT révocation (comparé plus bas au 404 d'après).
+        const oracleBefore = await fetch(`${API}/verify/revocation/${issuedId}`);
+        const oracleBeforeBody = oracleBefore.ok
+          ? ((await oracleBefore.json()) as { status?: string })
+          : null;
+        if (!oracleBefore.ok) await oracleBefore.arrayBuffer().catch(() => undefined);
+
+        const shareSel = await studentBrowser.req(`/wallet/diplomas/${issuedId}/share`, {
+          json: { expiresInDays: 7, disclosedFields: ["holderName", "programTitle"] },
+        });
+        const shareSelToken =
+          shareSel.status === 201 ? shareSel.json<{ token: string }>().token : null;
+        let selBundle: ProofBundleDTO | null = null;
+        let selText = "";
+        if (shareSelToken) {
+          const sel = await runVerifyRaw(shareSelToken);
+          selText = sel.text;
+          const selBody = sel.parsed as {
+            result?: string;
+            engine?: string;
+            proofBundle?: ProofBundleDTO | null;
+            hiddenCount?: number;
+          } | null;
+          selBundle = selBody?.proofBundle ?? null;
+          check(
+            "V1 SD : partage à 2 champs → verified, bundle ed25519-sd-v2 à 2 disclosures",
+            sel.status === 200 &&
+              selBody?.result === "verified" &&
+              selBody.engine === "ed25519-sd-v2" &&
+              selBundle?.engine === "ed25519-sd-v2" &&
+              selBundle.disclosures.length === 2 &&
+              selBody.hiddenCount === 5,
+            `HTTP ${sel.status} ${sel.text.slice(0, 160)}`,
+          );
+        } else {
+          check(
+            "V1 SD : partage à 2 champs → verified, bundle ed25519-sd-v2 à 2 disclosures",
+            false,
+            `share HTTP ${shareSel.status} ${shareSel.text.slice(0, 160)}`,
+          );
+        }
+
+        const selLocal = selBundle ? await verifyProofBundle(selBundle) : null;
+        const selLocalOk = selLocal !== null && selLocal.ok ? selLocal : null;
+        check(
+          "V1 SD : vérification LOCALE du bundle (verifyProofBundle) → ok, 5 champs masqués",
+          selLocalOk !== null &&
+            selLocalOk.hidden === 5 &&
+            selLocalOk.disclosed.holderName === "Étudiant Smoke",
+          selLocal ? JSON.stringify(selLocal).slice(0, 160) : "bundle absent",
+        );
+
+        // Fuite par sous-chaîne : les 5 valeurs non divulguées ne doivent apparaître
+        // NULLE PART dans la réponse sérialisée (v2.md §V1-7.6).
+        const hiddenValues = [CLAIM_SCHOOL_EMAIL, '"Bien"', "RNCP99999", "2019-03-27", `SMOKE-${RUN_ID}`];
+        check(
+          "V1 SD : aucune valeur non divulguée dans le JSON de réponse",
+          selText.length > 0 && hiddenValues.every((v) => !selText.includes(v)),
+          hiddenValues.filter((v) => selText.includes(v)).join(", ") || "réponse vide",
+        );
+
+        /* V3 — Journal de transparence (registre public horodaté) */
+        section("Journal de transparence (V3)");
+
+        // 1) Preuve d'inclusion publique, vérifiée LOCALEMENT (merkle partagé) contre
+        //    la racine du checkpoint signé — le recruteur ne fait confiance à personne.
+        const inclusionRes = await fetch(`${API}/log/inclusion/${issuedId}`);
+        const inclusion = inclusionRes.ok
+          ? ((await inclusionRes.json()) as TransparencyProofDTO)
+          : null;
+        if (!inclusionRes.ok) await inclusionRes.arrayBuffer().catch(() => undefined);
+        const inclusionLocalOk =
+          inclusion !== null &&
+          verifyInclusion({
+            leafHashHex: inclusion.leafHash,
+            leafIndex: inclusion.leafIndex,
+            treeSize: inclusion.checkpoint.treeSize,
+            auditPathHex: inclusion.auditPath,
+            rootHashHex: inclusion.checkpoint.rootHash,
+          });
+        check(
+          "V3 : /log/inclusion → inclusion RFC 6962 vérifiée localement contre la racine",
+          inclusionRes.status === 200 && inclusionLocalOk,
+          `HTTP ${inclusionRes.status}`,
+        );
+
+        // 2) Un partage v2 par défaut (issuedAt divulgué) porte `transparency` non nul,
+        //    validé par le vérificateur partagé — binding "full" + signature checkpoint.
+        const shareTp = await studentBrowser.req(`/wallet/diplomas/${issuedId}/share`, {
+          json: { expiresInDays: 7 },
+        });
+        const shareTpToken =
+          shareTp.status === 201 ? shareTp.json<{ token: string }>().token : null;
+        let tpBundle: ProofBundleDTO | null = null;
+        if (shareTpToken) {
+          const raw = await runVerifyRaw(shareTpToken);
+          tpBundle =
+            (raw.parsed as { proofBundle?: ProofBundleDTO | null } | null)?.proofBundle ?? null;
+        }
+        const tpOutcome = tpBundle ? await verifyTransparency(tpBundle) : null;
+        check(
+          'V3 : bundle v2 porte `transparency`, verifyTransparency locale ok, binding "full"',
+          tpBundle?.transparency != null &&
+            tpOutcome !== null &&
+            tpOutcome.ok &&
+            tpOutcome.binding === "full",
+          tpOutcome ? JSON.stringify(tpOutcome).slice(0, 160) : "bundle transparency absent",
+        );
+
+        // 3) Consistance append-only entre deux tailles, vérifiée localement. On force
+        //    une 2ᵉ feuille puis on compare le checkpoint avant/après.
+        const issue2 = await schoolBrowser.req("/diplomas", {
+          json: {
+            holderName: "Témoin Consistance V3",
+            holderEmail: `v3.consistency.${RUN_ID}@ecole-demo.fr`,
+            programTitle: "Diplôme témoin V3",
+            issuedAt: "2026-07-15",
+            externalId: `V3-CONS-${RUN_ID}`,
+          },
+        });
+        const issue2Id = issue2.status === 201 ? issue2.json<{ id: string }>().id : null;
+        let consistencyLocalOk = false;
+        let consistencyStatus = 0;
+        let consText = "";
+        if (inclusion && issue2Id) {
+          const inc2Res = await fetch(`${API}/log/inclusion/${issue2Id}`);
+          const inc2 = inc2Res.ok ? ((await inc2Res.json()) as TransparencyProofDTO) : null;
+          if (!inc2Res.ok) await inc2Res.arrayBuffer().catch(() => undefined);
+          const from = inclusion.checkpoint.treeSize;
+          const to = inc2?.checkpoint.treeSize ?? from;
+          if (inc2 && to > from) {
+            const consRes = await fetch(`${API}/log/consistency?from=${from}&to=${to}`);
+            consistencyStatus = consRes.status;
+            consText = consRes.ok ? await consRes.text() : "";
+            if (!consRes.ok) await consRes.arrayBuffer().catch(() => undefined);
+            const cons = consText ? (JSON.parse(consText) as LogConsistencyDTO) : null;
+            consistencyLocalOk =
+              cons !== null &&
+              cons.fromRoot === inclusion.checkpoint.rootHash &&
+              cons.toRoot === inc2.checkpoint.rootHash &&
+              verifyConsistency({
+                fromSize: cons.fromSize,
+                toSize: cons.toSize,
+                fromRootHex: cons.fromRoot,
+                toRootHex: cons.toRoot,
+                proofHex: cons.proof,
+              });
+          }
+        }
+        // Assert gratuit : aucune PII de diplôme dans les OBJETS transparency (seule la
+        // feuille HACHÉE) — le test de fuite reste vert même quand issuedAt est masqué.
+        const transparencyBlobs = [
+          inclusion ? JSON.stringify(inclusion) : "",
+          tpBundle?.transparency ? JSON.stringify(tpBundle.transparency) : "",
+          consText,
+        ].join(" ");
+        const piiNeedles = ["Étudiant Smoke", CLAIM_SCHOOL_EMAIL, "Licence Test E2E", "2019-03-27"];
+        const noPii = piiNeedles.every((n) => !transparencyBlobs.includes(n));
+        check(
+          "V3 : /log/consistency vérifiée localement (append-only) + zéro PII transparency",
+          consistencyLocalOk && noPii,
+          consistencyLocalOk ? `PII fuite: ${piiNeedles.filter((n) => transparencyBlobs.includes(n)).join(", ")}` : `consistency HTTP ${consistencyStatus}`,
+        );
+
+        const eudiProbe = await runEudiFlow(studentBrowser, issuedId);
+
         const revokeDiploma = await schoolBrowser.req(`/diplomas/${issuedId}/revoke`, {
           json: { reason: "Révocation test E2E" },
         });
         check("école : révocation du diplôme → 200", revokeDiploma.status === 200, `HTTP ${revokeDiploma.status}`);
+        if (eudiProbe) {
+          check(
+            "EUDI : révocation produit dérivée dans la status list (bit 1)",
+            (await statusBit(eudiProbe)) === 1,
+          );
+        }
         const share2 = await studentBrowser.req(`/wallet/diplomas/${issuedId}/share`, {
           json: { expiresInDays: 7 },
         });
@@ -419,7 +1052,37 @@ async function main(): Promise<void> {
         if (share2Token) {
           const vRevoked = await runVerify(share2Token);
           check("diplôme révoqué → revoked", vRevoked.result === "revoked", vRevoked.result);
+
+          // V1 SD : la crypto tient toujours (la preuve est autonome), mais le
+          // statut réseau dit « révoqué » — c'est exactement la promesse honnête.
+          const revokedRaw = await runVerifyRaw(share2Token);
+          const revokedBody = revokedRaw.parsed as {
+            result?: string;
+            proofBundle?: ProofBundleDTO | null;
+          } | null;
+          const revokedBundle = revokedBody?.proofBundle ?? null;
+          const revokedLocal = revokedBundle ? await verifyProofBundle(revokedBundle) : null;
+          check(
+            "V1 SD : après révocation, bundle crypto valide mais revocation.status=revoked",
+            revokedBody?.result === "revoked" &&
+              revokedBundle?.revocation.status === "revoked" &&
+              revokedLocal !== null &&
+              revokedLocal.ok,
+            `HTTP ${revokedRaw.status} ${revokedRaw.text.slice(0, 160)}`,
+          );
         }
+
+        // Oracle de révocation : 200 actif avant, 404 UNIFORME après (anti-énumération —
+        // indistinguable d'un id inconnu, aucune donnée du diplôme).
+        const oracleAfter = await fetch(`${API}/verify/revocation/${issuedId}`);
+        await oracleAfter.arrayBuffer().catch(() => undefined);
+        check(
+          "V1 SD : oracle de révocation — 200 actif avant, 404 uniforme après",
+          oracleBefore.status === 200 &&
+            oracleBeforeBody?.status === "active" &&
+            oracleAfter.status === 404,
+          `avant ${oracleBefore.status} · après ${oracleAfter.status}`,
+        );
       }
 
       const logout = await studentBrowser.req("/auth/logout", { json: {} });
@@ -498,6 +1161,10 @@ async function main(): Promise<void> {
     const stats = await adminBrowser.req("/admin/stats");
     const statsBody = stats.status === 200 ? stats.json<{ schools: { approved: number } }>() : null;
     check("GET /admin/stats : ≥ 1 école approuvée", (statsBody?.schools.approved ?? 0) >= 1, `HTTP ${stats.status}`);
+    if (schoolOk) {
+      section("Accrochage CDC (admin → école → CRT)");
+      await runCdcFlow(adminBrowser, schoolBrowser, school.id);
+    }
     const adminLogout = await adminBrowser.req("/auth/admin/logout", { json: {} });
     check("admin : logout (CSRF realm admin) → ok", adminLogout.status === 200, `HTTP ${adminLogout.status}`);
   }

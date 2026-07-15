@@ -15,6 +15,26 @@ const zBool = (def: boolean) =>
     )
     .default(def);
 
+/** An OAuth issuer is an origin, never an arbitrary URL with path or credentials. */
+const zHttpOrigin = z
+  .string()
+  .url()
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return (
+        (url.protocol === "http:" || url.protocol === "https:") &&
+        url.username === "" &&
+        url.password === "" &&
+        url.pathname === "/" &&
+        url.search === "" &&
+        url.hash === ""
+      );
+    } catch {
+      return false;
+    }
+  }, "PUBLIC_API_ORIGIN must be a bare HTTP(S) origin (for example https://api.example.com)");
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -107,6 +127,14 @@ const EnvSchema = z.object({
   RATE_LIMIT_WINDOW: z.coerce.number().int().positive().default(60),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
 
+  // Sensitive CDC identity data is erased this many days after acceptance.
+  CDC_RETENTION_DAYS: z.coerce.number().int().positive().max(365).default(30),
+
+  // ── EUDI Wallet / OpenID4VCI issuer ──────────────────────────────────────
+  // Public, externally reachable API origin canonicalized as credential issuer.
+  PUBLIC_API_ORIGIN: zHttpOrigin.default("http://localhost:4000"),
+  VC_EXPORT_ENABLED: zBool(false),
+
   // Trust forwarding headers (X-Forwarded-For / X-Real-IP) ONLY when the API runs
   // behind a trusted reverse proxy (Railway/Fly/Vercel/nginx). Off by default so a
   // client cannot spoof its IP to bypass per-IP rate limits (see security audit #1).
@@ -119,7 +147,62 @@ const EnvSchema = z.object({
     z.string().min(16).optional(),
   ),
 
+  // ── V2 — Signer seam (v2.md §V2-1) ─────────────────────────────────────────
+  // Where school issuer private keys live. 'envelope' (default) = AES-256-GCM
+  // blob at rest, exactly as before. 'kms' = HashiCorp Vault Transit (Ed25519) —
+  // keys never leave the vault. The two coexist per-school (schools.signer_kind),
+  // so a switch to kms only affects schools approved afterwards (no migration).
+  SIGNER_KIND: z.enum(["envelope", "kms"]).default("envelope"),
+  VAULT_ADDR: z.string().default(""),
+  VAULT_TOKEN: z.string().default(""),
+  VAULT_TRANSIT_MOUNT: z.string().default("transit"),
+  VAULT_KEY_PREFIX: z.string().default("certifychain-school"),
+
+  // ── V3 — Transparency log anchoring (v2.md §V3-5) ──────────────────────────
+  // Comma-separated OpenTimestamps calendar base URLs. Empty → anchoring is
+  // disabled (clean degradation, same pattern as SIRENE/Gemini): checkpoints are
+  // still signed and served, just never carry a Bitcoin timestamp proof.
+  OTS_CALENDARS: z.string().default(""),
+
   MIGRATE_ON_START: zBool(true),
+}).superRefine((value, ctx) => {
+  if (
+    value.NODE_ENV === "production" &&
+    value.VC_EXPORT_ENABLED &&
+    new URL(value.PUBLIC_API_ORIGIN).protocol !== "https:"
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["PUBLIC_API_ORIGIN"],
+      message: "PUBLIC_API_ORIGIN must use HTTPS when EUDI export is enabled in production",
+    });
+  }
+  // Selecting the KMS signer without a reachable, authenticated Vault would fail
+  // at the FIRST school approval — fail fast at boot instead.
+  if (value.SIGNER_KIND === "kms") {
+    let validAddr = false;
+    try {
+      const url = new URL(value.VAULT_ADDR);
+      validAddr = url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      validAddr = false;
+    }
+    if (!validAddr) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["VAULT_ADDR"],
+        message:
+          "VAULT_ADDR must be a valid http(s) URL when SIGNER_KIND=kms (for example https://vault.example.com)",
+      });
+    }
+    if (value.VAULT_TOKEN.trim() === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["VAULT_TOKEN"],
+        message: "VAULT_TOKEN is required when SIGNER_KIND=kms",
+      });
+    }
+  }
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -134,6 +217,10 @@ if (!parsed.success) {
 }
 
 const raw = parsed.data;
+
+// OpenTimestamps calendars (v2.md §V3-5): parsed once so `otsEnabled` mirrors the
+// SIRENE/Gemini "configured" flags rather than being recomputed at each read.
+const otsCalendars = raw.OTS_CALENDARS.split(",").map((u) => u.trim()).filter(Boolean);
 
 export const env = Object.freeze({
   ...raw,
@@ -155,6 +242,10 @@ export const env = Object.freeze({
     starter: raw.STRIPE_SECRET_KEY.length > 0 && raw.STRIPE_PRICE_STARTER.length > 0,
     pro: raw.STRIPE_SECRET_KEY.length > 0 && raw.STRIPE_PRICE_PRO.length > 0,
   },
+  vcExportEnabled: raw.VC_EXPORT_ENABLED,
+  // Parsed OpenTimestamps calendar list + a boolean gate (v2.md §V3-5).
+  otsCalendars,
+  otsEnabled: otsCalendars.length > 0,
 });
 
 export type Env = typeof env;

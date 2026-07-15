@@ -8,8 +8,13 @@ import { Button, ToastProvider, useToast } from "@certifychain/shared/ui";
 import ThemeToggle from "@certifychain/shared/ui/ThemeToggle";
 import { ApiClientError, verifyChallenge, verifyProof } from "@/lib/api";
 import type { VerificationResultDTO } from "@certifychain/contract/dto";
+import {
+  verifyProofBundle,
+  type VerifyOutcome,
+} from "@certifychain/shared/crypto/verify-bundle";
 import { VerifyScan } from "./VerifyScan";
 import { VerifiedCard } from "./VerifiedCard";
+import { VerifiedBundleCard } from "./VerifiedBundleCard";
 import { FailedCard, type FailedResult } from "./FailedCard";
 
 /** Local UI phase. `error` covers a transport/network failure (not a verdict). */
@@ -37,6 +42,9 @@ function VerifyExperienceInner({ token }: VerifyExperienceProps): JSX.Element {
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [result, setResult] = useState<VerificationResultDTO | null>(null);
+  // v2 only: the verdict computed by THIS browser (`verifyProofBundle`). It, not
+  // the server, decides whether we show "Vérifié". Null for v1 legacy diplomas.
+  const [clientOutcome, setClientOutcome] = useState<VerifyOutcome | null>(null);
   const inFlight = useRef(false);
 
   const runVerification = useCallback(async () => {
@@ -44,11 +52,18 @@ function VerifyExperienceInner({ token }: VerifyExperienceProps): JSX.Element {
     inFlight.current = true;
     setPhase("loading");
     setResult(null);
+    setClientOutcome(null);
 
     try {
       const { nonce } = await verifyChallenge(token);
       const verdict = await verifyProof(token, { nonce });
+      // v2: re-run the FULL crypto verification locally, in the browser. The
+      // displayed verdict is this outcome — never the server's word alone.
+      const outcome = verdict.proofBundle
+        ? await verifyProofBundle(verdict.proofBundle)
+        : null;
       setResult(verdict);
+      setClientOutcome(outcome);
       setPhase("result");
     } catch (err) {
       const message =
@@ -66,8 +81,6 @@ function VerifyExperienceInner({ token }: VerifyExperienceProps): JSX.Element {
   useEffect(() => {
     void runVerification();
   }, [runVerification]);
-
-  const isVerified = result?.result === "verified";
 
   return (
     <main className="relative min-h-svh flex flex-col bg-mesh noise overflow-hidden">
@@ -132,19 +145,12 @@ function VerifyExperienceInner({ token }: VerifyExperienceProps): JSX.Element {
               <VerifyScan />
             </motion.div>
           ) : phase === "result" && result ? (
-            isVerified && result.diploma ? (
-              <motion.div key="verified" className="w-full">
-                <VerifiedCard diploma={result.diploma} engine={result.engine} />
-              </motion.div>
-            ) : (
-              <motion.div key="failed" className="w-full">
-                <FailedCard
-                  result={result.result as FailedResult}
-                  onRetry={runVerification}
-                  retrying={false}
-                />
-              </motion.div>
-            )
+            <ResultCard
+              key="result"
+              result={result}
+              clientOutcome={clientOutcome}
+              onRetry={runVerification}
+            />
           ) : (
             <motion.div
               key="error"
@@ -180,7 +186,7 @@ function VerifyExperienceInner({ token }: VerifyExperienceProps): JSX.Element {
         {/* Reassurance footnote */}
         <p className="mt-6 flex items-center gap-1.5 text-xs text-muted-soft text-center">
           <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-          Vérification par preuve à divulgation nulle · sans inscription
+          Vérifié dans votre navigateur · sans inscription · sans nous faire confiance
         </p>
       </div>
 
@@ -198,6 +204,78 @@ function VerifyExperienceInner({ token }: VerifyExperienceProps): JSX.Element {
         </p>
       </footer>
     </main>
+  );
+}
+
+/**
+ * Chooses which outcome card to render.
+ *
+ * v2 (`proofBundle` present): the verdict is DRIVEN BY THE CLIENT outcome. We
+ * show "Vérifié" only when the browser said `ok` AND revocation is active. A
+ * `revoked` server result OR `revocation.status === "revoked"` is a DISTINCT
+ * revoked state (crypto valid ≠ diploma valid — never show "Vérifié" on crypto
+ * alone). Any other case (client `ok:false`) is an invalid verdict.
+ *
+ * v1 (`proofBundle === null`): strictly the historical behaviour, untouched.
+ */
+function ResultCard({
+  result,
+  clientOutcome,
+  onRetry,
+}: {
+  result: VerificationResultDTO;
+  clientOutcome: VerifyOutcome | null;
+  onRetry: () => void;
+}): JSX.Element {
+  const bundle = result.proofBundle;
+
+  // ── v2 selective-disclosure path ────────────────────────────────────────
+  if (bundle) {
+    const revoked =
+      result.result === "revoked" || bundle.revocation.status === "revoked";
+
+    if (revoked) {
+      return (
+        <motion.div key="revoked" className="w-full">
+          <FailedCard result="revoked" onRetry={onRetry} retrying={false} />
+        </motion.div>
+      );
+    }
+    if (clientOutcome?.ok && bundle.revocation.status === "active") {
+      return (
+        <motion.div key="verified-v2" className="w-full">
+          <VerifiedBundleCard
+            bundle={bundle}
+            disclosed={clientOutcome.disclosed}
+            hidden={clientOutcome.hidden}
+          />
+        </motion.div>
+      );
+    }
+    // The browser could NOT validate the proof → invalid, whatever the server said.
+    return (
+      <motion.div key="invalid-v2" className="w-full">
+        <FailedCard result="invalid" onRetry={onRetry} retrying={false} />
+      </motion.div>
+    );
+  }
+
+  // ── v1 legacy path (unchanged) ──────────────────────────────────────────
+  if (result.result === "verified" && result.diploma) {
+    return (
+      <motion.div key="verified" className="w-full">
+        <VerifiedCard diploma={result.diploma} engine={result.engine} />
+      </motion.div>
+    );
+  }
+  return (
+    <motion.div key="failed" className="w-full">
+      <FailedCard
+        result={result.result as FailedResult}
+        onRetry={onRetry}
+        retrying={false}
+      />
+    </motion.div>
   );
 }
 

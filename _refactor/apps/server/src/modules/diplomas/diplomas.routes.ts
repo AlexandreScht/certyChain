@@ -15,10 +15,12 @@ import { CSV_IMPORT } from "../../config/constants";
 import { db } from "../../db/client";
 import { diplomas, schools } from "../../db/schema";
 import type { AppEnv } from "../../http/types";
+import { tokenizeCsv } from "../../lib/csv";
 import { fail } from "../../lib/http-error";
 import { getAuth, requireAuth } from "../../middleware/auth";
 import { csrfProtect } from "../../middleware/csrf";
 import { recordAudit } from "../audit/audit.service";
+import { clearVcStatusCache } from "../vc/vc.service";
 import { issueDiploma, toDiplomaDTO } from "./diplomas.service";
 
 /** Resolves the authenticated school admin's schoolId (guaranteed present). */
@@ -130,6 +132,8 @@ export const diplomasRoutes = new Hono<AppEnv>()
       .where(and(eq(diplomas.id, id), eq(diplomas.schoolId, schoolId)))
       .returning();
     if (!updated) throw fail.notFound();
+
+    clearVcStatusCache();
 
     await recordAudit({
       type: "revocation",
@@ -262,53 +266,4 @@ export function parseCsv(text: string): Record<string, string>[] {
     });
     return record;
   });
-}
-
-/** Splits CSV text into rows of string cells, honouring quotes and escapes. */
-function tokenizeCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i += 1; // skip the escaped quote
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += ch;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ",") {
-      row.push(field);
-      field = "";
-    } else if (ch === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else if (ch === "\r") {
-      // ignore — handled by the following \n (or EOF)
-    } else {
-      field += ch;
-    }
-  }
-
-  // Flush trailing field/row (file may not end with a newline).
-  if (field !== "" || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows;
 }

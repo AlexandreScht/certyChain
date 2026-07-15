@@ -152,11 +152,11 @@ export default function HeroSection() {
             transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
             className="font-display font-bold text-ink tracking-tight leading-[1.05] text-[clamp(2.5rem,min(6vw,8vh),5.5rem)]"
           >
-            Vos diplômes,{" "}
-            <span className="grad-text">infalsifiables</span>
+            Un faux diplôme{" "}
+            <span className="grad-text">ne passe plus</span>
             <br />
-            Une confiance,{" "}
-            <span className="grad-text-cool">incontestable</span>
+            Une preuve{" "}
+            <span className="grad-text-cool">vérifiable sans nous</span>
           </motion.h1>
 
           <motion.div
@@ -167,10 +167,10 @@ export default function HeroSection() {
             className="relative mt-[clamp(1rem,3vh,2rem)] max-w-[65ch]"
           >
             <p className="font-elegant text-[clamp(1rem,min(1.5vw,2vh),1.35rem)] text-muted leading-[1.75] tracking-wide">
-              CertifyChain émet et vérifie vos diplômes numériques via preuves à divulgation
-              nulle (ZKP). Pour les écoles : un portail d&apos;émission sécurisé, un
-              certificat PKI officiel et une vérification instantanée — sans ressaisie, sans
-              stress administratif, sans fraude possible.
+              Chaque diplôme est signé par son école. Le recruteur le vérifie dans son
+              propre navigateur, en 2 secondes, sans compte — et l&apos;élève choisit
+              exactement ce qu&apos;il montre. Chaque émission est inscrite dans un registre
+              public horodaté : même nous ne pouvons pas réécrire l&apos;histoire.
             </p>
             <p
               ref={paraOverlayRef}
@@ -183,10 +183,10 @@ export default function HeroSection() {
                 WebkitMaskImage: 'radial-gradient(circle 180px at var(--mx) var(--my), black 0%, transparent 75%)',
               } as React.CSSProperties}
             >
-              CertifyChain émet et vérifie vos diplômes numériques via preuves à divulgation
-              nulle (ZKP). Pour les écoles : un portail d&apos;émission sécurisé, un
-              certificat PKI officiel et une vérification instantanée — sans ressaisie, sans
-              stress administratif, sans fraude possible.
+              Chaque diplôme est signé par son école. Le recruteur le vérifie dans son
+              propre navigateur, en 2 secondes, sans compte — et l&apos;élève choisit
+              exactement ce qu&apos;il montre. Chaque émission est inscrite dans un registre
+              public horodaté : même nous ne pouvons pas réécrire l&apos;histoire.
             </p>
           </motion.div>
 
@@ -219,8 +219,8 @@ export default function HeroSection() {
             className="mt-[clamp(1.5rem,5vh,3.5rem)] grid grid-cols-3 gap-[clamp(0.5rem,1.5vw,1rem)] max-w-2xl"
           >
             {[
-              { kpi: "< 2s", label: "preuve ZKP" },
-              { kpi: "99,9 %", label: "SLA Enterprise" },
+              { kpi: "0", label: "compte à créer" },
+              { kpi: "< 2s", label: "vérification" },
               { kpi: "KYB", label: "institutionnel" },
             ].map((x) => (
               <div
@@ -308,11 +308,11 @@ export default function HeroSection() {
                 </div>
               </div>
 
-              {/* ZKP footer */}
+              {/* Crypto footer — le moteur réel est ed25519-nonce-v1. */}
               <div className="mt-4 flex items-center justify-between text-[11px]">
                 <div className="flex items-center gap-1.5 text-ink font-medium">
                   <KeyRound className="w-3.5 h-3.5 text-indigo-600" />
-                  ZKP Groth16 · nonce unique
+                  Signé par l&apos;école · vérifié chez vous
                 </div>
                 <div className="flex items-center gap-1.5 text-success font-semibold">
                   <CheckCircle2 className="w-3.5 h-3.5" />

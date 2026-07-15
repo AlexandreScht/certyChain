@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { keyVault } from "../crypto/envelope";
 import { type DiplomaPayload, hashDiplomaPayload } from "../crypto/hashing";
 import { generateEd25519KeyPair, issueSchoolCertificate, signDiplomaHash } from "../crypto/keys";
+import { env } from "../config/env";
 import { db, sqlClient } from "../db/client";
 import {
   diplomas,
@@ -23,6 +24,7 @@ import { urlToken, uuid } from "../lib/ids";
 import { logger } from "../lib/logger";
 import { hashPassword } from "../lib/password";
 import { generateTotpSecret, totpAuthUri } from "../lib/totp";
+import { ensureActiveVcIssuerKey } from "../modules/vc/issuer-keys";
 
 const SCHOOL_NAME = "École Démo CertifyChain";
 const ADMIN_EMAIL = "admin@ecole-demo.fr";
@@ -62,9 +64,19 @@ async function ensureSettings(): Promise<void> {
   }
 }
 
+/** Smoke/dev bootstrap only: production rotations remain an explicit operator action. */
+async function ensureVcIssuerKeyWhenEnabled(): Promise<void> {
+  if (!env.vcExportEnabled) return;
+  const result = await ensureActiveVcIssuerKey();
+  logger.info(result.created ? "seed.vc_issuer_key_created" : "seed.vc_issuer_key_exists", {
+    kid: result.kid,
+  });
+}
+
 async function seed(): Promise<void> {
   await ensurePlatformAdmin();
   await ensureSettings();
+  await ensureVcIssuerKeyWhenEnabled();
 
   const existing = await db.select().from(schools).where(eq(schools.name, SCHOOL_NAME)).limit(1);
   if (existing.length > 0) {

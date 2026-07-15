@@ -6,7 +6,7 @@ const columns: { title: string; links: { label: string; href: string | null }[] 
     title: "Produit",
     links: [
       { label: "Pour les écoles", href: "#ecoles" },
-      { label: "Principe ZKP", href: "#securite" },
+      { label: "Principe cryptographique", href: "#securite" },
       { label: "Tarifs", href: "#tarifs" },
       { label: "Fonctionnalités IA", href: "#ia" },
     ],
@@ -83,9 +83,8 @@ export default function Footer() {
             </span>
           </div>
           <p className="mt-5 text-sm text-muted max-w-sm leading-relaxed">
-            Plateforme SaaS B2B de délivrance et vérification de diplômes via
-            preuves Zero-Knowledge. Pour un monde où la fraude aux diplômes
-            devient techniquement impossible.
+            Des diplômes signés par leur école, vérifiables par n&apos;importe qui,
+            en 2 secondes — sans compte, et sans avoir à nous faire confiance.
           </p>
           <div className="mt-6 flex items-center gap-2">
             {[

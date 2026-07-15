@@ -21,7 +21,7 @@ const steps = [
     n: 1,
     icon: ShieldCheck,
     title: "KYB institutionnel",
-    desc: "Vérification SIRET, RNCP, EQAR + validation humaine 48h.",
+    desc: "Vérification SIRET, RNCP + validation humaine 48h.",
     tint: "indigo",
   },
   {
@@ -56,7 +56,7 @@ const steps = [
     n: 6,
     icon: CheckCircle2,
     title: "Double vérification",
-    desc: "ZKP validée contre la clé publique ET certificat validé contre la racine CertifyChain.",
+    desc: "Signature validée contre la clé publique de l'école ET certificat validé contre la racine CertifyChain.",
     tint: "magenta",
   },
 ];
@@ -235,15 +235,29 @@ export default function CryptoSection() {
               À retenir
             </div>
             <h3 className="font-display font-bold text-ink text-2xl md:text-3xl leading-tight mt-1">
-              La fraude aux diplômes devient{" "}
-              <span className="grad-text-cool">mathématiquement impossible</span>.
+              Ne nous croyez pas.{" "}
+              <span className="grad-text-cool">Vérifiez</span>.
             </h3>
             <p className="mt-3 text-muted max-w-3xl">
               Un document falsifié n&apos;aura jamais une signature valide. Un lien
               capturé ne peut pas être rejoué. Un émetteur révoqué invalide
-              rétroactivement tous ses diplômes. CertifyChain fonctionne
-              aujourd&apos;hui sur un modèle centralisé hautement sécurisé, avec
-              option d&apos;ancrage blockchain (Polygon) pour l&apos;offre Enterprise.
+              rétroactivement tous ses diplômes. Chaque école signe avec sa
+              propre clé — nous ne sommes pas le tiers de confiance : les
+              mathématiques le sont.
+            </p>
+            <p className="mt-3 text-muted max-w-3xl">
+              Et vous n&apos;avez pas à nous croire sur parole : la vérification
+              s&apos;exécute <strong className="text-ink font-semibold">dans votre
+              navigateur</strong>. Téléchargez la preuve, vérifiez-la hors ligne,
+              sans nous. Chaque émission est inscrite dans un{" "}
+              <strong className="text-ink font-semibold">registre public horodaté</strong>{" "}
+              dont la racine est ancrée dans Bitcoin — même nous ne pouvons pas
+              réécrire l&apos;histoire.
+            </p>
+            <p className="mt-3 text-sm text-muted-soft max-w-3xl">
+              Zéro donnée personnelle sur la blockchain : nous n&apos;y publions
+              qu&apos;une empreinte de registre, qui n&apos;identifie personne. Contrairement
+              aux « diplômes NFT », votre droit à l&apos;effacement reste intact.
             </p>
           </div>
         </div>

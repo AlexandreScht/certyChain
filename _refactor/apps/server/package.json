@@ -21,10 +21,12 @@
     "db:migrate": "tsx --env-file=../../.env src/scripts/migrate-cli.ts",
     "db:seed": "tsx --env-file=../../.env src/scripts/seed.ts",
     "seed:admin": "tsx --env-file=../../.env src/scripts/seed-admin.ts",
-    "keys:root": "tsx src/scripts/gen-root-keys.ts"
+    "keys:root": "tsx src/scripts/gen-root-keys.ts",
+    "keys:vc": "tsx --env-file=../../.env src/scripts/gen-vc-issuer-key.ts"
   },
   "dependencies": {
     "@certifychain/contract": "workspace:*",
+    "@certifychain/shared": "workspace:*",
     "@hono/node-server": "^1.13.7",
     "@hono/zod-validator": "^0.4.1",
     "drizzle-orm": "^0.38.2",

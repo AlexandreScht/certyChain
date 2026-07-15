@@ -306,8 +306,9 @@ export default function SchoolDashboardPage() {
                 </h3>
                 <p className="text-sm text-muted mt-0.5 max-w-xl leading-relaxed">
                   Chaque diplôme est signé par la clé privée de votre
-                  établissement et vérifiable via une preuve à divulgation nulle
-                  (ZKP).
+                  établissement, sous la racine PKI CertifyChain. Votre clé ne
+                  quitte jamais son coffre matériel — même nous ne pouvons pas
+                  l&apos;extraire.
                 </p>
               </div>
             </div>

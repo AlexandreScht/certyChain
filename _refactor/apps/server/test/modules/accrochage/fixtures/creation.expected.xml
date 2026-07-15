@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cpf:flux xmlns:cpf="urn:cdc:cpf:pc5:schema:1.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <cpf:idFlux>11111111-1111-4111-8111-111111111111</cpf:idFlux>
+  <cpf:horodatage>2026-07-12T13:14:15+00:00</cpf:horodatage>
+  <cpf:action>CREATION</cpf:action>
+  <cpf:emetteur>
+    <cpf:idClient>04VHF013</cpf:idClient>
+    <cpf:certificateurs>
+      <cpf:certificateur>
+        <cpf:idClient>04VHF013</cpf:idClient>
+        <cpf:idContrat>MCFCER091220241</cpf:idContrat>
+        <cpf:certifications>
+          <cpf:certification>
+            <cpf:type>RNCP</cpf:type>
+            <cpf:code>RNCP11556</cpf:code>
+            <cpf:natureDeposant>CERTIFICATEUR</cpf:natureDeposant>
+            <cpf:passageCertifications>
+              <cpf:passageCertification>
+                <cpf:idTechnique>22222222-2222-4222-8222-222222222222</cpf:idTechnique>
+                <cpf:obtentionCertification>PAR_ADMISSION</cpf:obtentionCertification>
+                <cpf:donneeCertifiee>true</cpf:donneeCertifiee>
+                <cpf:dateDebutValidite>2026-06-30</cpf:dateDebutValidite>
+                <cpf:dateFinValidite xsi:nil="true"/>
+                <cpf:presenceNiveauLangueEuro>false</cpf:presenceNiveauLangueEuro>
+                <cpf:presenceNiveauNumeriqueEuro>false</cpf:presenceNiveauNumeriqueEuro>
+                <cpf:scoring xsi:nil="true"/>
+                <cpf:mentionValidee xsi:nil="true"/>
+                <cpf:modalitesInscription>
+                  <cpf:modaliteAcces xsi:nil="true"/>
+                </cpf:modalitesInscription>
+                <cpf:identificationTitulaire>
+                  <cpf:identifiantNational>
+                    <cpf:nir>180012A123456</cpf:nir>
+                    <cpf:nomNaissance>DUPONT</cpf:nomNaissance>
+                  </cpf:identifiantNational>
+                </cpf:identificationTitulaire>
+              </cpf:passageCertification>
+            </cpf:passageCertifications>
+          </cpf:certification>
+        </cpf:certifications>
+      </cpf:certificateur>
+    </cpf:certificateurs>
+  </cpf:emetteur>
+</cpf:flux>

@@ -3,43 +3,53 @@
  * Redacts sensitive keys so secrets/PII never reach the logs.
  */
 
+import { isSensitiveLogKey } from "./mask";
+
 type Level = "debug" | "info" | "warn" | "error";
 type Fields = Record<string, unknown>;
 
 const LEVELS: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 const MIN = process.env.NODE_ENV === "production" ? LEVELS.info : LEVELS.debug;
 
-const REDACT_KEYS = new Set(
-  [
-    "password",
-    "passwordhash",
-    "privatekey",
-    "encryptedprivatekey",
-    "encryptedholdersecret",
-    "holdersecret",
-    "secret",
-    "token",
-    "refreshtoken",
-    "accesstoken",
-    "codehash",
-    "otp",
-    "authorization",
-    "cookie",
-    "set-cookie",
-    "masterkey",
-    "master_enc_key",
-    "otp_pepper",
-  ].map((k) => k.toLowerCase()),
-);
+const MAX_REDACTION_DEPTH = 8;
 
-function redact(value: unknown, depth = 0): unknown {
-  if (depth > 6 || value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
+function redactValue(
+  value: unknown,
+  depth: number,
+  ancestors: WeakSet<object>,
+): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (depth >= MAX_REDACTION_DEPTH) return "[truncated]";
+  if (ancestors.has(value)) return "[circular]";
+
+  ancestors.add(value);
+
+  if (Array.isArray(value)) {
+    const redacted = value.map((item) => redactValue(item, depth + 1, ancestors));
+    ancestors.delete(value);
+    return redacted;
+  }
+
   const out: Fields = {};
   for (const [k, v] of Object.entries(value as Fields)) {
-    out[k] = REDACT_KEYS.has(k.toLowerCase()) ? "[redacted]" : redact(v, depth + 1);
+    out[k] = isSensitiveLogKey(k)
+      ? "[redacted]"
+      : redactValue(v, depth + 1, ancestors);
   }
+  ancestors.delete(value);
   return out;
+}
+
+/**
+ * Return a JSON-serializable, recursively redacted copy suitable for logs.
+ *
+ * Exported so the security boundary can be tested directly. The input is never
+ * mutated. Deep/circular structures are replaced instead of being returned raw:
+ * returning them at the recursion limit would both leak nested secrets and make
+ * `JSON.stringify` throw on cycles.
+ */
+export function redactLogValue(value: unknown): unknown {
+  return redactValue(value, 0, new WeakSet<object>());
 }
 
 function emit(level: Level, msg: string, fields?: Fields): void {
@@ -48,7 +58,7 @@ function emit(level: Level, msg: string, fields?: Fields): void {
     level,
     msg,
     time: new Date().toISOString(),
-    ...(fields ? (redact(fields) as Fields) : {}),
+    ...(fields ? (redactLogValue(fields) as Fields) : {}),
   });
   // stdout for info/debug, stderr for warn/error
   if (level === "warn" || level === "error") process.stderr.write(line + "\n");

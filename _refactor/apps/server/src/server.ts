@@ -8,6 +8,11 @@ import { platformAdmins } from "./db/schema";
 import { startCleanupJob } from "./lib/cleanup";
 import { logger } from "./lib/logger";
 import { hashPassword } from "./lib/password";
+import {
+  setDefaultOtsClient,
+  startTransparencyJobs,
+} from "./modules/transparency/checkpoint.service";
+import { createOtsClient } from "./modules/transparency/ots";
 
 /**
  * Idempotent: creates the bootstrap platform admin (from env) if absent.
@@ -61,6 +66,11 @@ async function main(): Promise<void> {
 
   // Periodic data hygiene: purge expired nonces/OTPs + enforce audit retention.
   startCleanupJob();
+
+  // Transparency log (v2.md §V3): wire the OTS anchor (kept out of the route
+  // type-graph, see checkpoint.service), then start the checkpoint + OTS jobs.
+  if (env.otsEnabled) setDefaultOtsClient(createOtsClient({ calendars: env.otsCalendars }));
+  startTransparencyJobs();
 
   const shutdown = (signal: string): void => {
     logger.info("server.shutdown", { signal });

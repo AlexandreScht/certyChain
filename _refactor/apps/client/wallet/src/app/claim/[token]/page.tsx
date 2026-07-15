@@ -342,7 +342,8 @@ export default function ClaimPage({ params }: PageProps): JSX.Element {
 
           <p className="mt-6 text-center text-xs text-muted-soft">
             <Sparkles className="inline w-3.5 h-3.5 -mt-0.5 mr-1 text-indigo-500" />
-            Vos diplômes sont protégés par des preuves à divulgation nulle (ZKP).
+            Vos diplômes sont signés par votre école. Vous seul décidez de ce que
+            vous montrez.
           </p>
         </motion.div>
       </div>

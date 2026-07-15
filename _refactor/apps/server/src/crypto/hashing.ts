@@ -36,6 +36,27 @@ export function hashDiplomaPayload(payload: DiplomaPayload): string {
   return createHash("sha256").update(canonicalize(payload), "utf8").digest("hex");
 }
 
+/**
+ * The `ed25519-sd-v2` signed object (v2.md §V1-2). Only `id`/`schoolId` stay
+ * permanently visible (the verifier needs them to resolve the school before any
+ * check); every disclosable field is represented ONLY by its salted digest in
+ * `_sd`. `_sd` MUST be sorted lexicographically — otherwise the digest order
+ * would leak which digest is which field (a security requirement, not style).
+ */
+export interface SdPayloadV2 {
+  v: "sd-v2";
+  h: "sha-256";
+  id: string;
+  schoolId: string;
+  /** Salted per-field digests, sorted lexicographically. */
+  _sd: string[];
+}
+
+/** Hex SHA-256 of the canonical SdPayloadV2 (the value v2 schools sign). */
+export function hashSdPayloadV2(p: SdPayloadV2): string {
+  return createHash("sha256").update(canonicalize(p), "utf8").digest("hex");
+}
+
 export function sha256Hex(input: string | Buffer): string {
   return createHash("sha256").update(input).digest("hex");
 }

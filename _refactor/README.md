@@ -43,6 +43,21 @@ docker compose -f docker-compose.yml -f docker-compose-dev.yml up --build
 pnpm db:seed                  # école démo approuvée + diplôme signé + lien de partage
 ```
 
+Pour activer l'export EUDI en développement, définir `VC_EXPORT_ENABLED=true` et
+`PUBLIC_API_ORIGIN`, appliquer les migrations, puis provisionner la clé plateforme :
+
+```bash
+pnpm db:migrate
+pnpm --filter @certifychain/server keys:vc
+```
+
+Le seed crée cette clé de manière idempotente lorsqu'EUDI est activé. Une rotation explicite se
+fait avec `pnpm --filter @certifychain/server keys:vc -- --rotate` ; les anciennes clés restent
+publiées pour permettre la vérification des credentials existants.
+
+En production, EUDI exige une origine HTTPS nue (`https://api.example.com`, sans chemin) ; la
+configuration serveur refuse de démarrer si l'export est activé avec une origine HTTP.
+
 Comptes de démo (seed) : école `admin@ecole-demo.fr` / `DemoPassw0rd!24` (TOTP affiché par le
 seed) · wallet élève `alex.dubois@example.com` (OTP capturé par Mailpit) · admin plateforme :
 `ADMIN_BOOTSTRAP_EMAIL`/`ADMIN_BOOTSTRAP_PASSWORD` du `.env` (enrôlement TOTP au 1ᵉʳ login).
@@ -50,11 +65,15 @@ seed) · wallet élève `alex.dubois@example.com` (OTP capturé par Mailpit) · 
 ## Tests
 
 ```bash
-pnpm test        # 68 tests node:test (crypto, TOTP, OTP, rate-limit, throttle, PII…)
-pnpm smoke       # 44 checks E2E contre la stack Docker (stack dev up + db:seed d'abord) :
+pnpm test        # 129 tests node:test (crypto, CDC, SD-JWT VC, status list, auth, sécurité…)
+pnpm test:jest   # 300 tests UI/régression répartis sur 32 suites
+pnpm smoke       # 59 checks E2E contre la stack Docker (stack dev up + db:seed d'abord) :
                  # verify challenge→proof→verified + anti-rejeu, login MFA école, émission,
-                 # invitation claim → OTP → wallet → partage → révocations, realm admin.
+                 # claim/OTP/partage/admin + flux CDC complet + émission/révocation EUDI.
 ```
+
+Référence validée le 13 juillet 2026 : **129/129 node:test**, **300/300 Jest**, builds **4/4** et
+smoke Docker **59/59** après application des migrations 0011, 0012 et 0013.
 
 Le typecheck de chaque app cliente couvre aussi le câblage RPC (routes serveur incluses au build).
 

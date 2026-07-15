@@ -82,8 +82,20 @@ export function revokeSchool(id: string, reason: string): Promise<AdminSchoolDet
   return unwrap(api.admin.schools[":id"].revoke.$post({ param: { id }, json: { reason } }));
 }
 
+/** Lift a transparency-journal issuance freeze (v2.md §V3-6). */
+export function unfreezeSchool(id: string): Promise<AdminSchoolDetailDTO> {
+  return unwrap(api.admin.schools[":id"].unfreeze.$post({ param: { id } }));
+}
+
 export function revalidateSchool(id: string): Promise<AdminSchoolDetailDTO> {
   return unwrap(api.admin.schools[":id"].revalidate.$post({ param: { id } }));
+}
+
+export function setSchoolCdcEnabled(
+  id: string,
+  enabled: boolean,
+): Promise<AdminSchoolDetailDTO> {
+  return unwrap(api.admin.schools[":id"].cdc.$post({ param: { id }, json: { enabled } }));
 }
 
 /* ── Diplomas (read-only) ─────────────────────────────────────────────────── */

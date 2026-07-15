@@ -23,6 +23,12 @@ import type {
   VerifyProofInput,
   ChooseVerificationMethodInput,
   StartCheckoutInput,
+  UpdateCdcSettingsInput,
+  CdcIdentityFormInput,
+  CreateCdcExportInput,
+  ListCdcExportsQuery,
+  ListJournalQuery,
+  ReportJournalEntryInput,
 } from "@certifychain/contract/schemas";
 import type {
   SessionDTO,
@@ -34,10 +40,21 @@ import type {
   VerificationChallengeDTO,
   VerificationResultDTO,
   VerificationStateDTO,
+  RevocationStatusDTO,
   ProConnectStartDTO,
   ImportResultDTO,
   BillingStateDTO,
   BillingRedirectDTO,
+  CdcSettingsDTO,
+  CdcEligibleDiplomaDTO,
+  CdcIdentitySummaryDTO,
+  CdcIdentityImportResultDTO,
+  CdcExportDetailDTO,
+  CdcExportListDTO,
+  LogCheckpointDTO,
+  TransparencyProofDTO,
+  SchoolJournalDTO,
+  ReportJournalResultDTO,
 } from "@certifychain/contract/dto";
 
 /* ── Auth ───────────────────────────────────────────────────────────────── */
@@ -165,6 +182,78 @@ export async function importDiplomasCsv(file: File): Promise<ImportResultDTO> {
   return (await unwrap(res)) as ImportResultDTO;
 }
 
+/* ── Accrochage CDC ────────────────────────────────────────────────────── */
+
+export function getCdcSettings(): Promise<CdcSettingsDTO> {
+  return unwrap(api.cdc.settings.$get());
+}
+
+export function updateCdcSettings(input: UpdateCdcSettingsInput): Promise<CdcSettingsDTO> {
+  return unwrap(api.cdc.settings.$put({ json: input }));
+}
+
+export function listCdcEligibleDiplomas(): Promise<CdcEligibleDiplomaDTO[]> {
+  return unwrap(api.cdc.eligible.$get());
+}
+
+export function saveCdcIdentity(
+  input: CdcIdentityFormInput,
+): Promise<CdcIdentitySummaryDTO> {
+  return unwrap(api.cdc.identities.$post({ json: input }));
+}
+
+export async function importCdcIdentitiesCsv(
+  file: File,
+): Promise<CdcIdentityImportResultDTO> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await csrfFetch(`${API_BASE}/cdc/identities/import`, {
+    method: "POST",
+    body: form,
+  });
+  return (await unwrap(response)) as CdcIdentityImportResultDTO;
+}
+
+export function deleteCdcIdentity(diplomaId: string): Promise<{ ok: boolean }> {
+  return unwrap(api.cdc.identities[":diplomaId"].$delete({ param: { diplomaId } }));
+}
+
+export function createCdcExport(input: CreateCdcExportInput): Promise<CdcExportDetailDTO> {
+  return unwrap(api.cdc.exports.$post({ json: input }));
+}
+
+export function listCdcExports(
+  query: Partial<ListCdcExportsQuery> = {},
+): Promise<CdcExportListDTO> {
+  return unwrap(api.cdc.exports.$get({ query: toQueryRecord(query) }));
+}
+
+export function getCdcExport(id: string): Promise<CdcExportDetailDTO> {
+  return unwrap(api.cdc.exports[":id"].$get({ param: { id } }));
+}
+
+export function markCdcExportSubmitted(id: string): Promise<CdcExportDetailDTO> {
+  return unwrap(api.cdc.exports[":id"].submitted.$post({ param: { id } }));
+}
+
+export function uploadCdcCrt(id: string, content: string): Promise<CdcExportDetailDTO> {
+  return unwrap(api.cdc.exports[":id"].crt.$post({ param: { id }, json: { content } }));
+}
+
+export function cancelCdcExport(id: string): Promise<CdcExportDetailDTO> {
+  return unwrap(api.cdc.exports[":id"].cancel.$post({ param: { id } }));
+}
+
+export async function downloadCdcExport(
+  id: string,
+): Promise<{ blob: Blob; fileName: string }> {
+  const response = await csrfFetch(`${API_BASE}/cdc/exports/${encodeURIComponent(id)}/file`);
+  if (!response.ok) await unwrap(response);
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const fileName = /filename="([^"]+)"/i.exec(disposition)?.[1] ?? `accrochage-${id}.xml`;
+  return { blob: await response.blob(), fileName };
+}
+
 /* ── Public verification ────────────────────────────────────────────────── */
 
 export function verifyChallenge(token: string): Promise<VerificationChallengeDTO> {
@@ -176,4 +265,48 @@ export function verifyProof(
   input: VerifyProofInput,
 ): Promise<VerificationResultDTO> {
   return unwrap(api.verify[":token"].proof.$post({ param: { token }, json: input }));
+}
+
+/**
+ * Revocation oracle — re-checks a bundle's diploma independently of the share
+ * link. 200 → `{ status: "active", checkedAt }`. A uniform 404 (thrown as an
+ * `ApiClientError` with `status === 404`) means revoked OR unknown: on a bundle
+ * that is otherwise cryptographically valid, the caller reads 404 as "revoked".
+ */
+export function checkRevocation(diplomaId: string): Promise<RevocationStatusDTO> {
+  return unwrap(api.verify.revocation[":diplomaId"].$get({ param: { diplomaId } }));
+}
+
+/* ── Registre public de transparence (v2.md §V3) ────────────────────────── */
+
+/** Latest signed checkpoint (STH) of the public issuance log — no auth, no PII. */
+export function getLogCheckpoint(): Promise<LogCheckpointDTO> {
+  return unwrap(api.log.checkpoint.$get());
+}
+
+/**
+ * RFC 6962 inclusion proof for one diploma. A uniform 404 means malformed,
+ * unknown OR not yet journaled (anti-enumeration, mirror of `/verify/revocation`).
+ */
+export function getInclusionProof(diplomaId: string): Promise<TransparencyProofDTO> {
+  return unwrap(api.log.inclusion[":diplomaId"].$get({ param: { diplomaId } }));
+}
+
+/* ── Journal de transparence — portail école (v2.md §V3-6) ──────────────── */
+
+/** The school's own issuance journal (paginated) + its freeze status. */
+export function getSchoolJournal(
+  query: Partial<ListJournalQuery> = {},
+): Promise<SchoolJournalDTO> {
+  return unwrap(api.schools.journal.$get({ query: toQueryRecord(query) }));
+}
+
+/**
+ * Flag an issuance the school did not make. Side effect (by design): freezes
+ * ALL further issuance for this school until a platform admin unfreezes it.
+ */
+export function reportJournalEntry(
+  input: ReportJournalEntryInput,
+): Promise<ReportJournalResultDTO> {
+  return unwrap(api.schools.journal.report.$post({ json: input }));
 }

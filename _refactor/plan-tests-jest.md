@@ -1,8 +1,16 @@
 # Plan de tests Jest — clients + back (2026-07-10)
 
-> **STATUT : IMPLÉMENTÉ + ÉTENDU (2ᵉ vague, même jour)** — `pnpm test:jest` :
-> **30 suites, 278 tests, 0 échec** (~6 s), sans casser l'existant
-> (`pnpm test` node:test = 68/68, typecheck serveur = 0).
+> **STATUT : IMPLÉMENTÉ + ÉTENDU (5ᵉ vague, chantier V3)** — `pnpm test:jest` :
+> **40 suites, 353 tests, 0 échec** (mis à jour 2026-07-15 ; 326/36 la veille, delta = chantier
+> V3 journal de transparence : `shared/merkle-verify.spec.ts` — RFC 6962 inclusion/consistance +
+> `verifyTransparency` —, `web/journal-page.spec.tsx` — tableau + gel + signalement —,
+> `web/transparency-panel.spec.tsx` — « en attente » vs « confirmé », absence si `transparency`
+> nul, note hash-only —, `admin/school-detail-page.spec.tsx` — bouton « Dégeler » conditionnel),
+> sans casser l'existant (`pnpm test` node:test = **229/229** — était 181 ; typecheck ×6 = 0).
+> Vague précédente (chantier V1, 2026-07-13/14) : `shared/verify-bundle.spec.ts` — l'algo de
+> vérification tourne en jsdom, fallback @noble ET chemin WebCrypto —, `web/verify-page.spec.tsx`
+> — verdict piloté par le client, état révoqué distinct, download bundle —,
+> `wallet/share-fields.spec.tsx` — 7 cases, `holderEmail` décochée par défaut, payload exact.
 > 🐛 La 2ᵉ vague a révélé un **bug sécurité réel** dans `login-throttle.ts`
 > (après un 1ᵉʳ lockout expiré, le compte ne pouvait plus JAMAIS être re-verrouillé :
 > `lockedUntil` restait non nul dans le passé et remettait `fails` à 0 à chaque échec).
@@ -10,7 +18,8 @@
 
 > Objectif : une suite **Jest** unifiée au niveau du monorepo qui teste le back (unités
 > critiques sans DB) **et** les clients (kit partagé + composants web/wallet/admin),
-> **sans toucher** à l'existant : les 68 tests `node:test` du serveur (`pnpm test`) et le
+> **sans toucher** à l'existant : les tests `node:test` du serveur (`pnpm test`, 68 à la création
+> du plan, **181 actuellement**) et le
 > smoke E2E Docker restent la référence d'intégration. Jest ajoute la couche
 > composants/DOM que `node:test` ne couvre pas, plus des tests de régression sur les
 > correctifs de l'audit 2026-07-10 (`audit.md`).
@@ -87,6 +96,7 @@ Script racine : `"test:jest": "jest"` (+ `jest --selectProjects server` pour cib
 | `login-throttle.spec.ts` ² | Verrouillage au 5ᵉ échec (durée exacte), expiration, **fenêtre neuve après lockout** (a révélé le bug `lockedUntil`), purge au succès, normalisation casse/espaces | Anti brute-force par compte |
 | `cookies.spec.ts` ² | Réalms `cc_*` vs `cc_admin_*` disjoints, refresh scoppé `/auth` vs `/auth/admin`, CSRF jamais HttpOnly, MFA TTL 300 s, clear ⇒ Max-Age=0 (contexte Hono simulé, capture `Set-Cookie`) | Modèle de session à deux réalms |
 | `mailer.spec.ts` ² | **Régression W1 serveur** : la notif waitlist part à l'équipe avec l'e-mail prospect ; OTP/claim contiennent code/URL ; échec SMTP **jamais** propagé ; sans SMTP ⇒ drop sans throw (rechargement `env` par `jest.isolateModules`) | Les mails portent l'auth et le claim |
+| `signer.spec.ts` ³ | Chantier V2 : `EnvelopeSigner` (comportement identique à l'ancien chemin), `KmsSigner` contre un faux Vault Transit en mémoire (vecteur de non-régression figé vs `signDiplomaHash`, erreurs sans fuite du token), `resolveSchoolSigner` (matrice envelope/kms, fallback legacy `signerRef ?? encryptedPrivateKey`) | Couture `Signer`/KMS — plus aucun PEM privé hors de `signer.ts` |
 
 ### Clients — projet `shared` (jsdom)
 
@@ -111,6 +121,7 @@ Script racine : `"test:jest": "jest"` (+ `jest --selectProjects server` pour cib
 | `status-badge.spec.tsx` | `SchoolStatusBadge` / `DiplomaStatusBadge` : libellé français par statut (dont `provisional`) |
 | `footer.spec.tsx` ² | **Régression W4** : année © dynamique, zéro `href="#"`, pages non publiées grisées « Bientôt disponible », ancres réelles cliquables, réseaux sociaux non cliquables |
 | `waitlist-section.spec.tsx` ² | **Régression W1 client** : submit ⇒ `joinWaitlist({email trim})` puis confirmation ; la promesse « sous 24h » n'apparaît JAMAIS avant la réponse (bouton « Envoi… » disabled) ; `ApiClientError` ⇒ `role=alert` + retry possible ; erreur inattendue ⇒ message générique ; e-mail vide ⇒ aucun appel |
+| `accrochage-page.spec.tsx` | Les 4 blocs CDC, état désactivé sans appels sensibles, badge d’identité manquante, NIR masqué/révélable, import CSV, panne distincte avec retry, détail CRT (items/code/raison) et révocation différée des object URLs |
 
 ### Clients — projet `wallet` (jsdom)
 
@@ -118,6 +129,7 @@ Script racine : `"test:jest": "jest"` (+ `jest --selectProjects server` pour cib
 |---|---|
 | `format.spec.ts` | `formatDate`/`formatYear` (ISO valide, invalide, null), `diplomaStatusMeta` (labels/tones) |
 | `diploma-card.spec.tsx` ² | **Régression WA1** : `DiplomaCard` (« signé Ed25519 », jamais Groth16/ZKP, lien `/id` accessible, école/programme/promo/mention/statut) + `DiplomaDetailCard` (« Preuve cryptographique · nonce unique », « Signature valide » actif-only, avertissement révoqué, tuile RNCP conditionnelle) |
+| `eudi-export.spec.tsx` | Export EUDI server-driven : bouton absent si indisponible, offre OpenID4VCI en modale (QR, `tx_code`, expiration), copie, erreur accessible et régénération |
 
 ### Clients — projet `admin` (jsdom)
 
@@ -126,7 +138,8 @@ Script racine : `"test:jest": "jest"` (+ `jest --selectProjects server` pour cib
 | `audit-labels.spec.ts` | **Régression A2** : chaque valeur de l'enum `audit_type` (liste miroir du serveur) a un libellé français |
 | `score-gauge.spec.tsx` | `ScoreGauge` : score affiché, `null` → « — », clamp 0–100 |
 
-> ² = 2ᵉ vague (2026-07-10, même session que le correctif login-throttle). Restent
+> ² = 2ᵉ vague (2026-07-10, même session que le correctif login-throttle). ³ = 4ᵉ vague
+> (2026-07-14, chantier V2 couture `Signer`/KMS). Restent
 > volontairement hors périmètre Jest : S5 (extraction `current_period_end` inline dans
 > `handleSubscriptionUpdated`, couplée DB → smoke), W2 (compteurs GSAP reduced-motion,
 > nécessiterait le vrai gsap en jsdom), pages App Router (§4).
@@ -144,5 +157,5 @@ Script racine : `"test:jest": "jest"` (+ `jest --selectProjects server` pour cib
 corepack pnpm@9.12.0 add -D -w …   # §2 (une fois)
 corepack pnpm@9.12.0 test:jest                 # toute la suite
 corepack pnpm@9.12.0 test:jest -- --selectProjects server
-corepack pnpm@9.12.0 test                      # (inchangé) 68 tests node:test serveur
+corepack pnpm@9.12.0 --filter @certifychain/server test  # 181 tests node:test serveur
 ```

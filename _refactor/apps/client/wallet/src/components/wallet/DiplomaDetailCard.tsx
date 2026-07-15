@@ -21,7 +21,7 @@ export interface DiplomaDetailCardProps {
 
 /**
  * Large, presentational diploma card for the detail view — mirrors the Hero
- * showcase card (rotating conic halo, shimmer body, ZKP footer).
+ * showcase card (rotating conic halo, shimmer body, crypto footer).
  */
 export function DiplomaDetailCard({
   diploma,
@@ -116,7 +116,7 @@ export function DiplomaDetailCard({
           </div>
         </div>
 
-        {/* ZKP footer */}
+        {/* Crypto footer */}
         <div className="mt-5 flex flex-wrap items-center justify-between gap-2 text-[11px]">
           <div className="flex items-center gap-1.5 text-ink font-medium">
             <KeyRound className="w-3.5 h-3.5 text-indigo-600" />

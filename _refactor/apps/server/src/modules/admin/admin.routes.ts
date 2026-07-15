@@ -8,6 +8,7 @@ import {
   RejectSchoolSchema,
   RevokeSchoolSchema,
   ReviewSchoolsQuerySchema,
+  SetCdcModuleEnabledSchema,
   UpdateSettingsSchema,
 } from "@certifychain/contract/schemas";
 import { env } from "../../config/env";
@@ -20,6 +21,7 @@ import { logger } from "../../lib/logger";
 import { getAuth, requireAdminAuth } from "../../middleware/auth";
 import { csrfProtect } from "../../middleware/csrf";
 import { rateLimit } from "../../middleware/rate-limit";
+import { setCdcModuleEnabled } from "../accrochage/accrochage.service";
 import { getSchoolById, markSchoolProvisional } from "../schools/schools.service";
 import { computeSchoolValidation, maybeAutoValidate } from "../schools/validation.service";
 import { sendProvisionalInvite } from "../verification/verification.service";
@@ -31,6 +33,7 @@ import {
   listSchoolsForAdmin,
   rejectSchool,
   revokeSchool,
+  unfreezeSchool,
 } from "./admin.service";
 import {
   getPlatformSettings,
@@ -58,6 +61,18 @@ export const adminRoutes = new Hono<AppEnv>()
 
   .get("/schools/:id", zValidator("param", idParam), async (c) =>
   c.json(await getSchoolDetailForAdmin(c.req.valid("param").id)),
+  )
+
+  .post(
+    "/schools/:id/cdc",
+    adminCsrf,
+    zValidator("param", idParam),
+    zValidator("json", SetCdcModuleEnabledSchema),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      await setCdcModuleEnabled(id, c.req.valid("json").enabled);
+      return c.json(await getSchoolDetailForAdmin(id));
+    },
   )
 
 // "Validate existence" — confirms the school is a real entity and moves it to
@@ -99,6 +114,13 @@ export const adminRoutes = new Hono<AppEnv>()
     return c.json(await getSchoolDetailForAdmin(id));
   },
   )
+
+/** Lift a transparency-journal issuance freeze (v2.md §V3-6). */
+  .post("/schools/:id/unfreeze", adminCsrf, zValidator("param", idParam), async (c) => {
+  const { id } = c.req.valid("param");
+  await unfreezeSchool(id, getAuth(c).sub);
+  return c.json(await getSchoolDetailForAdmin(id));
+  })
 
 /** Manually re-run the AI legitimacy scoring on a school. */
   .post(

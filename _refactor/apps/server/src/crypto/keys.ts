@@ -56,6 +56,12 @@ function rootPublicKeyPem(): string {
   return Buffer.from(env.CERTIFYCHAIN_ROOT_PUBLIC_KEY, "base64").toString("utf8");
 }
 
+/** The CertifyChain PKI root public key (SPKI PEM) — embedded in a v2 proof
+    bundle so a recruiter can validate the school certificate chain offline. */
+export function certifychainRootPublicKeyPem(): string {
+  return rootPublicKeyPem();
+}
+
 /** Root-signs the binding {schoolId, publicKey} → the school's certificate (base64). */
 export function issueSchoolCertificate(payload: SchoolCertPayload): string {
   return signEd25519(rootPrivateKeyPem(), Buffer.from(canonicalize(payload), "utf8"));
@@ -64,4 +70,23 @@ export function issueSchoolCertificate(payload: SchoolCertPayload): string {
 /** Verifies a school certificate against the CertifyChain root public key. */
 export function verifySchoolCertificate(payload: SchoolCertPayload, certB64: string): boolean {
   return verifyEd25519(rootPublicKeyPem(), Buffer.from(canonicalize(payload), "utf8"), certB64);
+}
+
+/* ── Transparency log: root-signed checkpoints (STH) ─────────────────────── */
+
+export interface LogCheckpointPayload {
+  treeSize: number;
+  rootHash: string;
+  timestamp: string;
+}
+
+/**
+ * Root-signs a transparency-log checkpoint (v2.md §V3-1) — the EXACT mirror of
+ * `issueSchoolCertificate`: `signEd25519(rootPriv, utf8(canonicalize(payload)))`.
+ * The shared browser verifier (`verify-transparency.ts`) recomputes this same
+ * canonical form over `{treeSize, rootHash, timestamp}`, so the two must never
+ * drift — same root key, same canonicalize.
+ */
+export function signLogCheckpoint(payload: LogCheckpointPayload): string {
+  return signEd25519(rootPrivateKeyPem(), Buffer.from(canonicalize(payload), "utf8"));
 }

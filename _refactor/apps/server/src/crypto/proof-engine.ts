@@ -9,11 +9,18 @@ import { verifyEd25519 } from "./keys";
  * verification so a captured link cannot be replayed. The document content is
  * never disclosed.
  *
- * Phase 2: drop in a real zk-SNARK (SnarkJS/Circom Groth16) implementing this
- * same interface — callers (the verify module) stay unchanged.
+ * Phase 2 (see v2.md): NOT a zk-SNARK. Groth16 was dropped — it buys privacy,
+ * not security, and costs a trusted setup plus a circuit-bug surface. The next
+ * engine is `ed25519-sd-v2`: same Ed25519 signature, but over a sorted list of
+ * salted per-field digests (SD-JWT / RFC 9901), which is what actually unlocks
+ * selective disclosure. Resolve the engine PER DIPLOMA (`diplomas.proof_version`)
+ * — never globally, or already-issued v1 diplomas break.
  */
+/** Discriminant resolved PER diploma (`diplomas.proof_version`), never globally. */
+export type ProofEngineId = "ed25519-nonce-v1" | "ed25519-sd-v2";
+
 export interface ProofEngine {
-  readonly id: string;
+  readonly id: ProofEngineId;
   generateNonce(): string;
   buildProof(input: { nonce: string; holderSecret: string; signatureB64: string }): string;
   verifyProof(input: {
@@ -75,4 +82,42 @@ class Ed25519NonceEngine implements ProofEngine {
   }
 }
 
-export const proofEngine: ProofEngine = new Ed25519NonceEngine();
+/**
+ * The legacy Phase-1 engine, unchanged. Diplomas emitted before V1 depend on it
+ * for life. No longer an implicit global default: every caller resolves the
+ * engine via `engineFor(diploma.proofVersion)`.
+ */
+export const ed25519NonceEngine: ProofEngine = new Ed25519NonceEngine();
+
+/**
+ * The `ed25519-sd-v2` engine (v2.md §V1). Selective disclosure changes only WHAT
+ * is hashed and signed (the sorted list of salted digests, computed upstream);
+ * the single-use nonce anti-replay transport is IDENTICAL to v1 — so it delegates
+ * the nonce mechanics verbatim rather than forking them.
+ */
+class Ed25519SdEngine implements ProofEngine {
+  readonly id = "ed25519-sd-v2";
+  generateNonce(): string {
+    return ed25519NonceEngine.generateNonce();
+  }
+  buildProof(input: { nonce: string; holderSecret: string; signatureB64: string }): string {
+    return ed25519NonceEngine.buildProof(input);
+  }
+  verifyProof(input: {
+    publicKeyPem: string;
+    payloadHashHex: string;
+    signatureB64: string;
+    nonce: string;
+    holderSecret: string;
+    proof: string;
+  }): boolean {
+    return ed25519NonceEngine.verifyProof(input);
+  }
+}
+
+export const ed25519SdEngine: ProofEngine = new Ed25519SdEngine();
+
+/** Resolve the proof engine for a given diploma's stored `proof_version`. */
+export function engineFor(proofVersion: "v1" | "v2"): ProofEngine {
+  return proofVersion === "v2" ? ed25519SdEngine : ed25519NonceEngine;
+}

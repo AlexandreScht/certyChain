@@ -1,10 +1,12 @@
 import { count, eq, sql } from "drizzle-orm";
 import type { SchoolDTO, SchoolStatsDTO } from "@certifychain/contract/dto";
-import { generateEd25519KeyPair, issueSchoolCertificate, keyVault } from "../../crypto";
+import { env } from "../../config/env";
+import { issueSchoolCertificate, signerFor } from "../../crypto";
 import { db } from "../../db/client";
 import { type School, diplomas, schoolAdmins, schools } from "../../db/schema";
 import { fail } from "../../lib/http-error";
 import { countVerifications, recordAudit } from "../audit/audit.service";
+import { clearVcStatusCache } from "../vc/vc.service";
 
 /** Build the public-facing school DTO (never exposes keys). */
 export function toSchoolDTO(school: School): SchoolDTO {
@@ -164,15 +166,20 @@ export async function approveSchool(
       .where(eq(schools.id, schoolId))
       .returning();
     if (!updated) throw fail.internal();
+    clearVcStatusCache();
     return updated;
   }
 
-  const { publicKey, privateKey } = generateEd25519KeyPair();
+  // Mint the issuer key through the Signer seam (v2.md §V2-1): the private key
+  // never surfaces here — we only get the public key (to certify + publish) and an
+  // opaque `ref` to persist. The backend is the deployment default (env.SIGNER_KIND).
+  const signer = signerFor(env.SIGNER_KIND);
+  const { publicKeyPem, ref } = await signer.createSchoolKey(schoolId);
   // Single instant for the signed cert `issuedAt` and the stored `approvedAt`
   // so verify re-derives the exact signed date (audit #15).
   const certificate = issueSchoolCertificate({
     schoolId,
-    publicKey,
+    publicKey: publicKeyPem,
     name: school.name,
     issuedAt: now.toISOString().slice(0, 10),
   });
@@ -182,12 +189,14 @@ export async function approveSchool(
     .set({
       ...base,
       approvedAt: now,
-      publicKey,
-      encryptedPrivateKey: keyVault.encrypt(privateKey),
+      publicKey: publicKeyPem,
       certificate,
+      signerKind: signer.kind,
+      signerRef: ref,
     })
     .where(eq(schools.id, schoolId))
     .returning();
   if (!updated) throw fail.internal();
+  clearVcStatusCache();
   return updated;
 }

@@ -21,6 +21,7 @@ const CONTRACT: [FailName, number, string][] = [
   ["otpExpired", 401, "otp_expired"],
   ["otpLocked", 429, "otp_locked"],
   ["schoolNotApproved", 403, "school_not_approved"],
+  ["issuanceFrozen", 403, "issuance_frozen"],
   ["verificationUnavailable", 409, "verification_unavailable"],
   ["verificationInProgress", 409, "verification_in_progress"],
   ["verificationFailed", 422, "verification_failed"],

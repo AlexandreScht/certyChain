@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { Check, Sparkles, ArrowRight } from "lucide-react";
+import { Check, Sparkles, ArrowRight, ShieldCheck, Landmark, Wallet } from "lucide-react";
 
 if (typeof window !== "undefined") gsap.registerPlugin(ScrollTrigger);
 
@@ -47,10 +47,12 @@ const plans = [
     cta: "Parler à l'équipe",
     features: [
       "Tout Pro, plus :",
+      "Accrochage CDC automatisé",
+      "Export EUDI Wallet (eIDAS 2.0)",
+      "Registre d'émission auditable",
       "API publique + SSO",
       "SLA 99,9 % garanti",
       "IA : scoring, traduction",
-      "Ancrage blockchain Polygon",
       "Multi-établissements",
       "CSM dédié",
     ],
@@ -172,6 +174,70 @@ export default function PricingSection() {
               </a>
             </article>
           ))}
+        </div>
+
+        {/* Deux exigences réglementaires réellement livrées (F1/F2), mises en
+            avant comme argument B2B — incluses dans Enterprise. */}
+        <div className="mt-16">
+          <div className="flex justify-center">
+            <div className="inline-flex items-center gap-2 neumorph-pill rounded-full px-3.5 py-1.5 text-xs font-semibold text-ink-soft">
+              <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+              Conformité &amp; interopérabilité, déjà couvertes
+            </div>
+          </div>
+
+          <div className="mt-6 grid md:grid-cols-2 gap-5">
+            {/* F1 — Accrochage CDC (Passeport de compétences) */}
+            <article className="group relative overflow-hidden rounded-[1.75rem] glass glass-sheen p-6 md:p-7 lift">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -top-14 -right-14 w-48 h-48 rounded-full opacity-70"
+                style={{ background: "radial-gradient(circle, rgba(99,102,241,0.16), transparent 70%)" }}
+              />
+              <div className="relative flex items-start justify-between gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-linear-to-br from-indigo-600 to-indigo-500 text-white grid place-items-center shadow-[0_10px_24px_-10px_rgba(79,70,229,0.55)]">
+                  <Landmark className="w-5.5 h-5.5" strokeWidth={2.1} />
+                </div>
+                <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-600 bg-indigo-100 rounded-full px-2.5 py-1">
+                  Art. L6113-8
+                </span>
+              </div>
+              <h3 className="relative mt-5 font-display font-bold text-ink text-xl leading-tight">
+                Votre obligation légale d&apos;accrochage,{" "}
+                <span className="grad-text">automatisée</span>
+              </h3>
+              <p className="relative mt-2.5 text-sm text-muted leading-relaxed">
+                Génération des fichiers XML pour le Passeport de compétences de la
+                Caisse des Dépôts, conforme à l&apos;article L6113-8. Une obligation
+                légale, pas un confort.
+              </p>
+            </article>
+
+            {/* F2 — Export EUDI Wallet (eIDAS 2.0) */}
+            <article className="group relative overflow-hidden rounded-[1.75rem] glass glass-sheen p-6 md:p-7 lift">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -top-14 -right-14 w-48 h-48 rounded-full opacity-70"
+                style={{ background: "radial-gradient(circle, rgba(6,182,212,0.16), transparent 70%)" }}
+              />
+              <div className="relative flex items-start justify-between gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-linear-to-br from-cyan-500 to-cyan-400 text-white grid place-items-center shadow-[0_10px_24px_-10px_rgba(6,182,212,0.55)]">
+                  <Wallet className="w-5.5 h-5.5" strokeWidth={2.1} />
+                </div>
+                <span className="text-[10px] uppercase font-bold tracking-wider text-cyan-700 dark:text-cyan-300 bg-cyan-100 rounded-full px-2.5 py-1">
+                  eIDAS 2.0
+                </span>
+              </div>
+              <h3 className="relative mt-5 font-display font-bold text-ink text-xl leading-tight">
+                Compatible{" "}
+                <span className="grad-text-cool">portefeuille d&apos;identité européen</span>
+              </h3>
+              <p className="relative mt-2.5 text-sm text-muted leading-relaxed">
+                Vos diplômes s&apos;exportent vers les portefeuilles EUDI via les
+                standards ouverts OpenID4VCI et SD-JWT VC (eIDAS 2.0).
+              </p>
+            </article>
+          </div>
         </div>
 
         <p className="mt-10 text-center text-sm text-muted">

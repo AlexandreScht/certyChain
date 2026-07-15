@@ -18,6 +18,11 @@ import { createShareLink, revokeShareLink } from "@/lib/api/endpoints";
 import { ApiClientError } from "@/lib/api/client";
 import type { ShareLinkDTO } from "@certifychain/contract/dto";
 import {
+  DISCLOSABLE_FIELDS,
+  DEFAULT_DISCLOSED_FIELDS,
+  type DisclosableField,
+} from "@certifychain/contract/enums";
+import {
   Badge,
   Button,
   Field,
@@ -28,6 +33,24 @@ import {
 import { cn } from "@certifychain/shared/lib/cn";
 
 import { formatDate } from "./format";
+
+/** Readable French labels for the 7 selectively-disclosable fields (v2.md §V1-2). */
+const FIELD_LABELS: Record<DisclosableField, string> = {
+  holderName: "Nom du titulaire",
+  holderEmail: "E-mail",
+  programTitle: "Intitulé de la formation",
+  mention: "Mention",
+  rncp: "Code RNCP",
+  issuedAt: "Date d'obtention",
+  externalId: "Référence école",
+};
+
+/** "1 champ restera masqué." / "N champs resteront masqués." */
+function maskedCountLabel(count: number): string {
+  if (count === 0) return "Aucun champ ne sera masqué.";
+  if (count === 1) return "1 champ restera masqué.";
+  return `${count} champs resteront masqués.`;
+}
 
 export interface SharePanelProps {
   diplomaId: string;
@@ -166,8 +189,28 @@ export function SharePanel({
     [...initialLinks].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   );
   const [expiry, setExpiry] = useState<string>("permanent");
+  const [disclosedFields, setDisclosedFields] = useState<Set<DisclosableField>>(
+    () => new Set(DEFAULT_DISCLOSED_FIELDS),
+  );
   const [creating, setCreating] = useState(false);
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
+
+  // Canonical order (not insertion order) — stable across toggles, and what
+  // gets sent to the server.
+  const selectedFields = useMemo(
+    () => DISCLOSABLE_FIELDS.filter((field) => disclosedFields.has(field)),
+    [disclosedFields],
+  );
+  const hiddenCount = DISCLOSABLE_FIELDS.length - selectedFields.length;
+
+  const toggleField = (field: DisclosableField) => {
+    setDisclosedFields((prev) => {
+      const next = new Set(prev);
+      if (next.has(field)) next.delete(field);
+      else next.add(field);
+      return next;
+    });
+  };
 
   // The most recently created SHAREABLE link (active, not expired) drives the
   // QR preview — an expired link must never be the one handed to a recruiter.
@@ -177,11 +220,14 @@ export function SharePanel({
   );
 
   const handleCreate = async () => {
-    if (creating) return;
+    if (creating || selectedFields.length === 0) return;
     setCreating(true);
     const expiresInDays = expiry === "permanent" ? null : Number(expiry);
     try {
-      const link = await createShareLink(diplomaId, { expiresInDays });
+      const link = await createShareLink(diplomaId, {
+        expiresInDays,
+        disclosedFields: selectedFields,
+      });
       setLinks((prev) => [link, ...prev]);
       toast.success("Lien de partage créé", "Vous pouvez maintenant le partager.");
     } catch (err) {
@@ -235,10 +281,66 @@ export function SharePanel({
             onChange={(e) => setExpiry(e.target.value)}
           />
         </Field>
+
+        <div>
+          <h3 className="text-sm font-semibold text-ink-soft">
+            Champs visibles par le recruteur
+          </h3>
+          <p className="text-xs text-muted mt-1 mb-3">
+            Vous choisissez ce que le recruteur peut voir. Les autres champs
+            restent masqués, même dans la preuve téléchargeable.
+          </p>
+
+          <div className="rounded-2xl neumorph-inset p-3 flex flex-col gap-0.5">
+            {DISCLOSABLE_FIELDS.map((field) => {
+              const checked = disclosedFields.has(field);
+              return (
+                <label
+                  key={field}
+                  className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 cursor-pointer transition-colors hover:bg-white/60 dark:hover:bg-white/5"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleField(field)}
+                    className="h-4 w-4 shrink-0 rounded accent-indigo-600"
+                  />
+                  <span className="text-sm text-ink">{FIELD_LABELS[field]}</span>
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 rounded-xl neumorph-inset px-3.5 py-3">
+            {selectedFields.length > 0 ? (
+              <>
+                <p className="text-xs font-semibold text-ink-soft">
+                  Le recruteur verra :
+                </p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {selectedFields.map((field) => (
+                    <Badge key={field} tone="neutral">
+                      {FIELD_LABELS[field]}
+                    </Badge>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs font-medium text-danger">
+                Sélectionnez au moins un champ à révéler.
+              </p>
+            )}
+            <p className="text-[11px] text-muted-soft mt-2">
+              {maskedCountLabel(hiddenCount)}
+            </p>
+          </div>
+        </div>
+
         <Button
           size="md"
           fullWidth
           loading={creating}
+          disabled={selectedFields.length === 0}
           onClick={handleCreate}
           leftIcon={<Link2 className="w-4.5 h-4.5" />}
         >

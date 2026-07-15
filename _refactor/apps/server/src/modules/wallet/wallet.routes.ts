@@ -2,7 +2,7 @@ import { zValidator } from "../../lib/validator";
 import { and, asc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
-import { SHARE_LINK } from "../../config/constants";
+import { RATE_LIMIT, SHARE_LINK } from "../../config/constants";
 import { CreateShareLinkSchema } from "@certifychain/contract/schemas";
 import { db } from "../../db/client";
 import { diplomas, shareLinks } from "../../db/schema";
@@ -11,7 +11,9 @@ import { fail } from "../../lib/http-error";
 import { urlToken } from "../../lib/ids";
 import { getAuth, requireAuth } from "../../middleware/auth";
 import { csrfProtect } from "../../middleware/csrf";
+import { enforceRateLimit } from "../../middleware/rate-limit";
 import { recordAudit } from "../audit/audit.service";
+import { createEudiOffer } from "../vc/vc.service";
 import {
   getStudentDiploma,
   listStudentDiplomas,
@@ -41,6 +43,19 @@ export const walletRoutes = new Hono<AppEnv>()
   return c.json(diploma);
   })
 
+  /** One-time OpenID4VCI offer for an eligible diploma owned by this student. */
+  .post(
+    "/diplomas/:id/eudi-offer",
+    csrfProtect(),
+    zValidator("param", idParamSchema),
+    async (c) => {
+      const { sub } = getAuth(c);
+      const { id } = c.req.valid("param");
+      enforceRateLimit(c, { key: "vc_offer", identifier: sub, ...RATE_LIMIT.VC_OFFER });
+      return c.json(await createEudiOffer(id, sub), 201);
+    },
+  )
+
 /** GET /wallet/diplomas/:id/shares — share links for an owned diploma. */
   .get("/diplomas/:id/shares", zValidator("param", idParamSchema), async (c) => {
   const { sub } = getAuth(c);
@@ -66,7 +81,7 @@ export const walletRoutes = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     if (!(await ownsDiploma(id, sub))) throw fail.notFound("Diplôme introuvable");
 
-    const { expiresInDays } = c.req.valid("json");
+    const { expiresInDays, disclosedFields } = c.req.valid("json");
     const expiresAt =
       expiresInDays == null ? null : new Date(Date.now() + expiresInDays * 86_400_000);
 
@@ -77,6 +92,8 @@ export const walletRoutes = new Hono<AppEnv>()
         token: urlToken(SHARE_LINK.TOKEN_BYTES),
         createdByStudentId: sub,
         expiresAt,
+        // Omit when unspecified so the column default (the historical fixed set) applies.
+        ...(disclosedFields ? { disclosedFields } : {}),
       })
       .returning();
     if (!row) throw fail.internal();

@@ -211,7 +211,7 @@ export function VerifiedCard({
         <div className="mt-5 pt-4 border-t border-hairline flex items-center justify-between gap-3 text-[11px]">
           <div className="flex items-center gap-1.5 text-muted font-medium">
             <BadgeCheck className="w-3.5 h-3.5 text-indigo-600" />
-            Preuve à divulgation nulle vérifiée
+            Vérifié dans votre navigateur
           </div>
           <div className="font-mono text-muted-soft truncate">
             moteur · {engine}

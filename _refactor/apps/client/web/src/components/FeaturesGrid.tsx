@@ -397,11 +397,13 @@ export default function FeaturesGrid() {
               [
                 "SIRET · INSEE",
                 "RNCP · France Compétences",
-                "EQAR · European Quality",
-                "W3C Verifiable Credentials",
-                "Polygon · Anchor",
-                "Ed25519 · SnarkJS",
-                "RGPD · TLS 1.3",
+                "Ed25519 · PKI CertifyChain",
+                "Registre public horodaté",
+                "Post-quantique · ML-DSA",
+                "EUDI Wallet · eIDAS 2.0",
+                "Accrochage CDC · Passeport de compétences",
+                "Révocation en temps réel",
+                "RGPD · divulgation minimale",
               ].map((l) => (
                 <span
                   key={`${dup}-${l}`}

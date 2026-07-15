@@ -39,7 +39,7 @@ const actors: Actor[] = [
       {
         icon: ShieldCheck,
         title: "KYB institutionnel",
-        desc: "Vérification SIRET, RNCP, EQAR + validation manuelle sous 48h.",
+        desc: "Vérification SIRET, RNCP + validation manuelle sous 48h.",
       },
       {
         icon: KeyRound,
@@ -81,8 +81,8 @@ const actors: Actor[] = [
     points: [
       {
         icon: ScanLine,
-        title: "Preuve ZKP en < 2 s",
-        desc: "Nonce unique à chaque clic, impossible à rejouer.",
+        title: "Vérifié chez vous",
+        desc: "La preuve s'exécute dans votre navigateur. Vous ne nous faites pas confiance : vous vérifiez.",
       },
       {
         icon: ShieldCheck,

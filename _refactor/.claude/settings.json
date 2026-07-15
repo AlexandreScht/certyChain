@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(corepack pnpm typecheck)",
+      "PowerShell(corepack pnpm lint)",
+      "PowerShell(corepack pnpm test)",
+      "PowerShell(corepack pnpm -r typecheck)",
+      "PowerShell(corepack pnpm -r lint)",
+      "PowerShell(corepack pnpm@9.12.0 -r typecheck)",
+      "PowerShell(corepack pnpm@9.12.0 -r lint)",
+      "PowerShell(corepack pnpm@9.12.0 test:jest)",
+      "PowerShell(corepack pnpm@9.12.0 --filter @certifychain/server test)",
+      "PowerShell(corepack pnpm --filter @certifychain/server test)",
+      "PowerShell(corepack pnpm --filter @certifychain/server typecheck)",
+      "PowerShell(corepack pnpm --filter @certifychain/web typecheck)",
+      "PowerShell(corepack pnpm --filter @certifychain/web lint)",
+      "PowerShell(npx tsc --noEmit)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(docker compose ps*)",
+      "Bash(docker compose logs *)",
+      "Bash(docker compose config*)",
+      "Bash(docker network ls)",
+      "Bash(docker network inspect *)",
+      "Bash(docker info*)",
+      "Bash(docker version *)"
+    ]
+  }
+}

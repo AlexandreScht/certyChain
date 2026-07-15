@@ -14,7 +14,7 @@ import {
   signDiplomaHash,
   verifySchoolCertificate,
 } from "../crypto/keys";
-import { proofEngine } from "../crypto/proof-engine";
+import { ed25519NonceEngine as proofEngine } from "../crypto/proof-engine";
 
 let passed = 0;
 function check(name: string, cond: boolean): void {

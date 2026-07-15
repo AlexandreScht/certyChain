@@ -18,6 +18,7 @@ const diploma = (over: Partial<WalletDiplomaDTO> = {}): WalletDiplomaDTO => ({
   rncp: null,
   issuedAt: "2026-06-15T10:00:00.000Z",
   status: "active",
+  eudiExportAvailable: false,
   ...over,
 });
 

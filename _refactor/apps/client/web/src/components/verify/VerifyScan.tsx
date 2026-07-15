@@ -12,7 +12,7 @@ const STEPS = [
 ] as const;
 
 /**
- * Cryptographic "scan" animation shown while the ZKP proof is verified
+ * Cryptographic "scan" animation shown while the signature is verified
  * server-side. Rotating conic ring + vertical scan beam + pulse halo, with the
  * step copy cycling for reassurance. Fully reduced-motion safe.
  */
@@ -115,8 +115,8 @@ export function VerifyScan(): JSX.Element {
       </ul>
 
       <p className="mt-6 text-xs text-muted-soft max-w-xs">
-        Calcul de la preuve à divulgation nulle côté serveur. Aucun secret ne
-        transite en clair.
+        Vérification de la signature dans votre navigateur. Aucune donnée ne nous
+        est envoyée.
       </p>
     </div>
   );

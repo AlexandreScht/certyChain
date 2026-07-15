@@ -14,6 +14,8 @@ import {
   Lock,
   Menu,
   X,
+  FileCheck2,
+  ScrollText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -39,6 +41,14 @@ const NAV_LINKS: NavLink[] = [
   { label: "Tableau de bord", href: "/ecole/dashboard", icon: LayoutDashboard },
   { label: "Vérification", href: "/ecole/verification", icon: ShieldCheck, exact: true },
   { label: "Diplômes", href: "/ecole/diplomes", icon: GraduationCap, exact: true },
+  { label: "Journal", href: "/ecole/journal", icon: ScrollText, exact: true },
+  {
+    label: "Accrochage CDC",
+    href: "/ecole/accrochage",
+    icon: FileCheck2,
+    exact: true,
+    requiresApproval: true,
+  },
   {
     label: "Émettre",
     href: "/ecole/diplomes/nouveau",

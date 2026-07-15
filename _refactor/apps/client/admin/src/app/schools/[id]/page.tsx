@@ -17,6 +17,9 @@ import {
   Building2,
   GraduationCap,
   ScanLine,
+  FileCheck2,
+  Lock,
+  Unlock,
 } from "lucide-react";
 
 import {
@@ -24,7 +27,9 @@ import {
   approveSchool,
   rejectSchool,
   revokeSchool,
+  unfreezeSchool,
   revalidateSchool,
+  setSchoolCdcEnabled,
 } from "@/lib/api/endpoints";
 import { ApiClientError } from "@/lib/api/client";
 import { Button, Card, Stat, Skeleton, Modal, Field, Textarea, useToast } from "@certifychain/shared/ui";
@@ -73,6 +78,8 @@ export default function AdminSchoolDetailPage() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [modal, setModal] = useState<null | "reject" | "revoke">(null);
+  const [cdcDisableOpen, setCdcDisableOpen] = useState(false);
+  const [unfreezeOpen, setUnfreezeOpen] = useState(false);
   const [reason, setReason] = useState("");
 
   const load = useCallback(async () => {
@@ -135,6 +142,45 @@ export default function AdminSchoolDetailPage() {
     }
   }
 
+  async function doUnfreeze() {
+    if (acting) return;
+    setActing(true);
+    try {
+      setSchool(await unfreezeSchool(id));
+      setUnfreezeOpen(false);
+      success("Émissions dégelées", "L'établissement peut de nouveau émettre des diplômes.");
+    } catch (err) {
+      if (err instanceof ApiClientError) toastError("Dégel impossible", err.message);
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function setCdcEnabled(enabled: boolean) {
+    if (acting || !school) return;
+    setActing(true);
+    try {
+      setSchool(await setSchoolCdcEnabled(id, enabled));
+      if (!enabled) setCdcDisableOpen(false);
+      success(
+        enabled ? "Accrochage CDC activé" : "Accrochage CDC désactivé",
+        enabled
+          ? "L’établissement peut maintenant configurer et préparer ses lots CDC."
+          : "La création de lots est bloquée et les identités CDC encore chiffrées ont été purgées.",
+      );
+    } catch (err) {
+      if (err instanceof ApiClientError) toastError("Modification impossible", err.message);
+    } finally {
+      setActing(false);
+    }
+  }
+
+  function toggleCdc() {
+    if (!school || acting) return;
+    if (school.cdcEnabled) setCdcDisableOpen(true);
+    else void setCdcEnabled(true);
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
@@ -182,6 +228,11 @@ export default function AdminSchoolDetailPage() {
               {school.name}
             </h1>
             <SchoolStatusBadge status={school.status} />
+            {school.issuanceFrozenAt && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-danger/12 px-2.5 py-1 text-[11px] font-semibold text-red-700 dark:text-red-300">
+                <Lock className="w-3 h-3" /> Émissions gelées
+              </span>
+            )}
             {school.autoValidated && (
               <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-[11px] font-semibold text-indigo-600">
                 <Sparkles className="w-3 h-3" /> Auto-validée
@@ -241,6 +292,35 @@ export default function AdminSchoolDetailPage() {
           </div>
         </div>
       </FadeIn>
+
+      {school.issuanceFrozenAt && (
+        <FadeIn>
+          <Card className="border border-danger/20 bg-danger/10 p-5 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-danger/15 text-red-700 dark:text-red-300">
+                  <Lock className="h-5 w-5" aria-hidden />
+                </span>
+                <div>
+                  <h2 className="font-display text-base font-bold text-ink">Émissions gelées</h2>
+                  <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">
+                    Émissions gelées depuis le {formatDate(school.issuanceFrozenAt)} — signalement
+                    au journal de transparence.
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="subtle"
+                onClick={() => setUnfreezeOpen(true)}
+                loading={acting}
+                leftIcon={<Unlock className="w-4 h-4" />}
+              >
+                Dégeler les émissions
+              </Button>
+            </div>
+          </Card>
+        </FadeIn>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-5">
         {/* AI validation */}
@@ -337,6 +417,52 @@ export default function AdminSchoolDetailPage() {
           </Card>
         </FadeIn>
       </div>
+
+      <FadeIn>
+        <Card className="p-5 sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-indigo-500/10 text-indigo-600">
+                <FileCheck2 className="h-5 w-5" aria-hidden />
+              </span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="font-display text-base font-bold text-ink">
+                    Accrochage CDC — Passeport de compétences
+                  </h2>
+                  <span
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                      school.cdcEnabled
+                        ? "bg-success/12 text-emerald-700 dark:text-emerald-300"
+                        : "bg-black/5 text-muted dark:bg-white/8",
+                    )}
+                  >
+                    {school.cdcEnabled ? "Activé" : "Désactivé"}
+                  </span>
+                </div>
+                <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">
+                  Autorise l’établissement à renseigner les identités minimales, générer les
+                  fichiers XML CDC et importer les comptes rendus de traitement.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant={school.cdcEnabled ? "subtle" : "primary"}
+              onClick={toggleCdc}
+              loading={acting}
+              disabled={school.status !== "approved" && !school.cdcEnabled}
+            >
+              {school.cdcEnabled ? "Désactiver" : "Activer le module"}
+            </Button>
+          </div>
+          {school.status !== "approved" && !school.cdcEnabled && (
+            <p className="mt-3 text-xs font-medium text-amber-600 dark:text-amber-300">
+              L’établissement doit être approuvé et disposer d’un SIRET valide avant activation.
+            </p>
+          )}
+        </Card>
+      </FadeIn>
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -445,6 +571,54 @@ export default function AdminSchoolDetailPage() {
             maxLength={500}
           />
         </Field>
+      </Modal>
+
+      <Modal
+        open={cdcDisableOpen}
+        onClose={() => {
+          if (!acting) setCdcDisableOpen(false);
+        }}
+        title="Désactiver l’accrochage CDC ?"
+        description="Cette action bloque les nouveaux lots et purge immédiatement les NIR et noms de naissance encore chiffrés. Un lot généré ou déposé doit d’abord être résolu ou annulé."
+        footer={
+          <>
+            <Button variant="subtle" onClick={() => setCdcDisableOpen(false)} disabled={acting}>
+              Annuler
+            </Button>
+            <Button onClick={() => void setCdcEnabled(false)} loading={acting}>
+              Désactiver et purger
+            </Button>
+          </>
+        }
+      >
+        <div className="flex items-start gap-3 rounded-2xl bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-800 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
+          Les identités purgées devront être collectées à nouveau si le module est réactivé.
+        </div>
+      </Modal>
+
+      <Modal
+        open={unfreezeOpen}
+        onClose={() => {
+          if (!acting) setUnfreezeOpen(false);
+        }}
+        title="Dégeler les émissions ?"
+        description="L'établissement pourra de nouveau émettre des diplômes immédiatement. À réserver aux signalements vérifiés comme infondés ou résolus."
+        footer={
+          <>
+            <Button variant="subtle" onClick={() => setUnfreezeOpen(false)} disabled={acting}>
+              Annuler
+            </Button>
+            <Button onClick={doUnfreeze} loading={acting}>
+              Confirmer
+            </Button>
+          </>
+        }
+      >
+        <div className="flex items-start gap-3 rounded-2xl bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-800 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
+          Si le signalement s&apos;avère fondé, révoquez plutôt l&apos;établissement.
+        </div>
       </Modal>
     </div>
   );

@@ -1,8 +1,21 @@
 # ADR-0001 : Choix du protocole de preuve cryptographique (ProofEngine)
 
 - **Date** : 2026-07-06
-- **Statut** : Accepté (Phase 1 implémentée ; Phase 2 planifiée, non bloquante)
+- **Statut** : **Phase 1 : Accepté (en vigueur)** · **Phase 2 (Groth16) : SUPERSEDED le 2026-07-12
+  par [`v2.md`](../../../v2.md) §0.1 →
+  [ADR-0004 (divulgation sélective & garde des clés)](./0004-selective-disclosure-and-key-custody.md).**
 - **Auteur** : CertifyChain (solo dev)
+
+> ⚠️ **Ne pas implémenter la « Phase 2 » décrite plus bas.** Groth16 a été abandonné après
+> vérification des sources : il achète de la **confidentialité**, pas de la **sécurité**, et il
+> *dégrade* plusieurs propriétés — BN254 ≈ 100–110 bits (Kim–Barbulescu) contre ~128 pour Ed25519 ;
+> preuves **malléables** (non simulation-extractable ⇒ le nonce resterait obligatoire) ; **trusted
+> setup** ; et ~96 % des vulnérabilités SNARK proviennent de **circuits sous-contraints**
+> (USENIX Security '24). La divulgation sélective — le vrai besoin — s'obtient **sans SNARK** via
+> des **hachés salés (SD-JWT, RFC 9901)**. Voir [`v2.md`](../../../v2.md) : chantier **V1**
+> (`ed25519-sd-v2`). Si un jour l'*unlinkability* ou les preuves de **prédicat** deviennent
+> nécessaires, la cible est **BBS+** (sans trusted setup), pas Groth16 — voir `v2.md` §V5.
+> La Phase 1 ci-dessous, elle, reste **exacte et en vigueur**.
 
 ## Contexte
 

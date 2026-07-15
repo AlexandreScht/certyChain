@@ -28,6 +28,19 @@ const AUDIT_TYPE_ENUM = [
   "subscription_started",
   "subscription_updated",
   "subscription_canceled",
+  "cdc_export_generated",
+  "cdc_export_submitted",
+  "cdc_crt_ingested",
+  "cdc_identity_purged",
+  "cdc_module_toggled",
+  "cdc_settings_updated",
+  "cdc_identity_upserted",
+  "cdc_identity_deleted",
+  "cdc_export_downloaded",
+  "vc_offer_created",
+  "vc_credential_issued",
+  "transparency_report",
+  "school_unfrozen",
 ] as const;
 
 describe("AUDIT_LABELS (régression A2)", () => {

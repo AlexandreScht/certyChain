@@ -98,6 +98,42 @@ export const CSV_IMPORT = {
   MAX_ROWS: 2000,
 } as const;
 
+/** Accrochage CDC product limits (stricter than the public portal ceiling). */
+export const CDC = {
+  MAX_BATCH: 500,
+} as const;
+
+/** OpenID4VCI / SD-JWT VC protocol and status-list parameters. */
+export const VC = {
+  OFFER_TTL_SEC: 600,
+  TOKEN_TTL_SEC: 300,
+  NONCE_TTL_SEC: 300,
+  TX_CODE_LEN: 5,
+  TX_MAX_ATTEMPTS: 3,
+  VCT: "urn:certifychain:diploma:1",
+  STATUS_LIST_CAPACITY: 4096,
+  STATUS_TTL_SEC: 300,
+} as const;
+
+/**
+ * Public transparency log (v2.md §V3). The advisory-lock key serializes
+ * `leaf_index` assignment inside the issuance transaction so every committed
+ * prefix stays contiguous (design D1) — a Postgres sequence would leave gaps on
+ * rollback and let MVCC commit order diverge from index order.
+ */
+export const TRANSPARENCY = {
+  /** Fixed int32 key for `pg_advisory_xact_lock` (arbitrary, dedicated to the log). */
+  LOCK_KEY: 0x7c3a1d02,
+  /** Debounce floor between on-demand checkpoints (bounds spam; D3). */
+  CHECKPOINT_MIN_INTERVAL_SEC: 10,
+  /** Hourly cron: sign a fresh checkpoint if the tree grew. */
+  CHECKPOINT_CRON_MS: 3_600_000,
+  /** OpenTimestamps retry/upgrade cron. */
+  OTS_JOB_INTERVAL_MS: 1_800_000,
+  /** Max checkpoints processed per OTS maintenance pass (bounded work). */
+  OTS_BATCH: 10,
+} as const;
+
 /** Per-account login throttle (in-memory; single-instance MVP). */
 export const LOGIN_THROTTLE = {
   MAX_FAILS: 5,
@@ -134,6 +170,11 @@ export const RATE_LIMIT = {
   TOTP_VERIFY_ACCOUNT: { max: 12, windowSec: 10 * 60 },
   /** Public verification surface (recruiter, anonymous) — per IP. */
   VERIFY_IP: { max: 60, windowSec: 60 },
+  /** Public revocation oracle (`GET /verify/revocation/:id`) — per IP. Bounded so
+      the endpoint can't be used to enumerate diplomas (404 stays uniform anyway). */
+  VERIFY_REVOCATION_IP: { max: 60, windowSec: 60 },
+  /** Public transparency-log surface (`/log/*`, recruiter/auditor) — per IP. */
+  TRANSPARENCY_IP: { max: 30, windowSec: 60 },
   /** School ownership-proof mutations — per IP. */
   VERIFICATION_IP: { max: 30, windowSec: 60 },
   /** School self-registration — per IP. */
@@ -149,4 +190,18 @@ export const RATE_LIMIT = {
   CLAIM_TOKEN: { max: 30, windowSec: 60 },
   /** Claim-link resend — per token, tighter (mints a fresh token + sends mail). */
   CLAIM_RESEND: { max: 3, windowSec: 3600 },
+  /** CDC XML generation — per school, independent of the admin account used. */
+  CDC_GENERATE: { max: 10, windowSec: 3600 },
+  /** CDC identity CSV parsing/upserts — per school (CPU + encrypted DB writes). */
+  CDC_IDENTITY_IMPORT: { max: 10, windowSec: 3600 },
+  /** CDC processing-report parsing/reconciliation — per school. */
+  CDC_CRT_INGEST: { max: 20, windowSec: 3600 },
+  /** OpenID4VCI token exchange — coarse per-IP anti-flood protection. */
+  VC_TOKEN: { max: 10, windowSec: 60 },
+  /** Stateless nonce minting endpoint — per IP. */
+  VC_NONCE: { max: 30, windowSec: 60 },
+  /** Credential issuance endpoint — per IP, supplemented by one-shot offers. */
+  VC_CREDENTIAL: { max: 10, windowSec: 60 },
+  /** Internal EUDI offer creation — keyed by authenticated student. */
+  VC_OFFER: { max: 10, windowSec: 60 },
 } as const;

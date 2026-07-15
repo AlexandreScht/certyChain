@@ -8,7 +8,11 @@
  */
 import { hc } from "hono/client";
 import type { InferRequestType, InferResponseType } from "hono/client";
-import type { MfaChallengeDTO } from "@certifychain/contract/dto";
+import type {
+  CdcSettingsDTO,
+  EudiOfferDTO,
+  MfaChallengeDTO,
+} from "@certifychain/contract/dto";
 import type { AppType } from "./app";
 
 const probe = hc<AppType>("http://type-probe.invalid");
@@ -28,5 +32,19 @@ type _LoginTakesCredentials = Assert<
 // …et le corps 2xx est compatible avec le DTO du contrat.
 type LoginBody = InferResponseType<typeof probe.auth.school.login.$post, 200>;
 type _LoginIsMfaChallenge = Assert<LoginBody extends MfaChallengeDTO ? true : false>;
+
+// F1 CDC remains visible end-to-end, including the bounded batch input.
+type CdcSettingsBody = InferResponseType<typeof probe.cdc.settings.$get, 200>;
+type _CdcSettingsContract = Assert<CdcSettingsBody extends CdcSettingsDTO ? true : false>;
+type CdcExportInput = InferRequestType<typeof probe.cdc.exports.$post>;
+type _CdcExportTakesDiplomas = Assert<
+  CdcExportInput extends { json: { diplomaIds: string[] } } ? true : false
+>;
+
+type EudiOfferBody = InferResponseType<
+  (typeof probe.wallet.diplomas)[":id"]["eudi-offer"]["$post"],
+  201
+>;
+type _EudiOfferContract = Assert<EudiOfferBody extends EudiOfferDTO ? true : false>;
 
 export {};

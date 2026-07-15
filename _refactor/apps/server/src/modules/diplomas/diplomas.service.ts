@@ -1,21 +1,29 @@
 import { and, eq, sql } from "drizzle-orm";
-import { CLAIM } from "../../config/constants";
+import { CLAIM, TRANSPARENCY } from "../../config/constants";
 import { env } from "../../config/env";
 import type { CreateDiplomaInput } from "@certifychain/contract/schemas";
 import type { DiplomaDTO } from "@certifychain/contract/dto";
 import {
-  hashDiplomaPayload,
+  buildSdV2Emission,
   keyVault,
-  signDiplomaHash,
+  resolveSchoolSigner,
   type DiplomaPayload,
 } from "../../crypto";
-import { db } from "../../db/client";
-import { type Diploma, diplomas, schools, students, studentEmailAliases } from "../../db/schema";
+import { db, type DB } from "../../db/client";
+import {
+  type Diploma,
+  diplomas,
+  issuanceLog,
+  schools,
+  students,
+  studentEmailAliases,
+} from "../../db/schema";
 import { fail } from "../../lib/http-error";
 import { uuid, urlToken } from "../../lib/ids";
 import { sendDiplomaClaimEmail, sendDiplomaNotification } from "../../lib/mailer";
 import { logger } from "../../lib/logger";
 import { recordAudit } from "../audit/audit.service";
+import { buildIssuanceLeaf } from "../transparency/merkle";
 
 /** Maps a diploma row to its public DTO. */
 export function toDiplomaDTO(row: Diploma, schoolName: string): DiplomaDTO {
@@ -46,22 +54,34 @@ function isUniqueViolation(e: unknown): boolean {
 
 /**
  * Issues a single diploma for an approved school: builds and hashes the canonical
- * payload, signs it with the school's (decrypted) private key, finds-or-creates the
- * holder student, persists the diploma, audits the issuance and notifies the holder.
+ * payload, signs it through the school's Signer (the private key never surfaces),
+ * finds-or-creates the holder student, persists the diploma, audits the issuance
+ * and notifies the holder.
  */
+/** Injectable dependencies (default = production `db`). The transaction runner is
+    the seam the transactionality test drives with a tx that fails the log insert. */
+export interface IssueDiplomaDeps {
+  db: DB;
+}
+
 export async function issueDiploma(
   schoolId: string,
   input: CreateDiplomaInput,
+  deps: IssueDiplomaDeps = { db },
 ): Promise<DiplomaDTO> {
-  const [school] = await db.select().from(schools).where(eq(schools.id, schoolId)).limit(1);
-  if (
-    !school ||
-    school.status !== "approved" ||
-    !school.publicKey ||
-    !school.encryptedPrivateKey
-  ) {
+  const { db: database } = deps;
+  const [school] = await database.select().from(schools).where(eq(schools.id, schoolId)).limit(1);
+  // Resolve the school's signer PER ROW (envelope legacy blob, envelope ref, or a
+  // KMS key name) — a school with no usable key material is treated exactly like a
+  // non-approved one. The private key never surfaces here (v2.md §V2-1).
+  const signing = school ? resolveSchoolSigner(school) : null;
+  if (!school || school.status !== "approved" || !school.publicKey || !signing) {
     throw fail.schoolNotApproved();
   }
+  // Transparency freeze (v2.md §V3-6): a school that flagged a rogue issuance is
+  // barred from emitting until an admin unfreezes. Placed AFTER the approved gate so
+  // the historical `school_not_approved` behaviour is strictly unchanged (S1).
+  if (school.issuanceFrozenAt) throw fail.issuanceFrozen();
 
   const diplomaId = uuid();
   const payload: DiplomaPayload = {
@@ -76,9 +96,32 @@ export async function issueDiploma(
     externalId: input.externalId ?? null,
   };
 
-  const payloadHash = hashDiplomaPayload(payload);
-  const privateKeyPem = keyVault.decryptToString(school.encryptedPrivateKey);
-  const signature = signDiplomaHash(privateKeyPem, payloadHash);
+  // ── ed25519-sd-v2 emission (v2.md §V1-4) ────────────────────────────────
+  // The pure core (crypto/sd-emission.ts) builds ALL 7 disclosures — including
+  // null-valued fields — and a lexicographically SORTED `_sd`. Salts stay secret
+  // at rest: the dict is envelope-encrypted before persisting.
+  const { disclosureByField, payloadHash } = buildSdV2Emission(diplomaId, schoolId, {
+    holderName: payload.holderName,
+    holderEmail: payload.holderEmail,
+    programTitle: payload.programTitle,
+    mention: payload.mention,
+    rncp: payload.rncp,
+    issuedAt: payload.issuedAt,
+    externalId: payload.externalId,
+  });
+  const signature = await signing.signer.sign(signing.ref, Buffer.from(payloadHash, "hex"));
+  const disclosuresEncrypted = keyVault.encrypt(JSON.stringify(disclosureByField));
+
+  // Transparency-log leaf (v2.md §V3-1): built from the SAME `issuedAt` string the
+  // disclosure carries, so the browser can rebind the leaf when it is revealed. No
+  // PII — the log is public. Computed here, appended inside `persist()` below.
+  const { leafHashHex } = buildIssuanceLeaf({
+    diplomaId,
+    schoolId,
+    payloadHash,
+    signature,
+    issuedAt: payload.issuedAt,
+  });
 
   // Resolve the holder identity via the (school, address) alias — NOT directly
   // by `students.email`, which is the holder's personal login identity and may
@@ -93,7 +136,7 @@ export async function issueDiploma(
   // loser's transaction rolls back entirely, then we retry once — the alias now
   // exists, so the retry takes the reuse branch instead of raising a 500.
   const persist = () =>
-    db.transaction(async (tx) => {
+    database.transaction(async (tx) => {
       const [existingAlias] = await tx
         .select()
         .from(studentEmailAliases)
@@ -146,11 +189,27 @@ export async function issueDiploma(
           externalId: payload.externalId,
           payloadHash,
           signature,
+          proofVersion: "v2",
+          disclosuresEncrypted,
+          // Kept as-is: the holder secret binds the nonce proof, orthogonal to SD.
           encryptedHolderSecret: keyVault.encrypt(urlToken(32)),
           status: "active",
         })
         .returning();
       if (!inserted) throw fail.internal();
+
+      // ── Transparency log append (v2.md §V3-2), SAME tx (design D2) ──────────
+      // A failure here rolls the diploma back — it never existed. The advisory
+      // xact lock serializes leaf_index assignment so every committed prefix is
+      // contiguous (D1): the lock is held until commit, so no two issuances can
+      // interleave, and a rollback frees the index for the next MAX+1.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${TRANSPARENCY.LOCK_KEY})`);
+      const [maxRow] = await tx
+        .select({ next: sql<number>`coalesce(max(${issuanceLog.leafIndex}) + 1, 0)` })
+        .from(issuanceLog);
+      const leafIndex = Number(maxRow?.next ?? 0);
+      await tx.insert(issuanceLog).values({ diplomaId, leafIndex, leafHash: leafHashHex });
+
       return { row: inserted, studentId, existingAlias, freshAlias };
     });
 
@@ -181,7 +240,7 @@ export async function issueDiploma(
   // already-pending alias, so the holder isn't re-mailed the same invite).
   const walletUrl = env.WALLET_ORIGIN;
   if (existingAlias?.verifiedAt) {
-    const [holder] = await db
+    const [holder] = await database
       .select({ email: students.email })
       .from(students)
       .where(eq(students.id, studentId))

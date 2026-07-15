@@ -78,6 +78,48 @@
       "when": 1750000900000,
       "tag": "0010_student_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1750001000000,
+      "tag": "0011_cdc_accrochage",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1750001100000,
+      "tag": "0012_vc_issuer",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1750001200000,
+      "tag": "0013_cdc_export_settings_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1750001300000,
+      "tag": "0014_selective_disclosure",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1750001400000,
+      "tag": "0015_signer_seam",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1750001500000,
+      "tag": "0016_transparency_log",
+      "breakpoints": true
     }
   ]
 }

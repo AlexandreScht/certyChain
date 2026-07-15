@@ -27,15 +27,20 @@ const outfit = Outfit({
 export const metadata: Metadata = {
   title: "CertifyChain — Diplômes numériques infalsifiables pour votre établissement",
   description:
-    "Plateforme SaaS de délivrance et vérification de diplômes via preuves Zero-Knowledge. Rendez la fraude techniquement impossible, vérifiable en moins de 10 secondes.",
+    "Diplômes numériques signés par leur école et vérifiables dans le navigateur du recruteur, en moins de 10 secondes, sans compte. L'élève choisit les informations qu'il partage.",
   keywords: [
     "diplôme numérique",
     "vérification diplôme",
-    "Zero-Knowledge Proof",
+    "signature Ed25519",
     "PKI éducation",
     "SaaS école",
     "anti-fraude diplôme",
-    "blockchain diplôme",
+    "diplôme infalsifiable",
+    "EUDI Wallet",
+    "eIDAS 2.0",
+    "SD-JWT VC",
+    "accrochage CDC",
+    "passeport de compétences",
   ],
   openGraph: {
     title: "CertifyChain — Diplômes numériques infalsifiables",

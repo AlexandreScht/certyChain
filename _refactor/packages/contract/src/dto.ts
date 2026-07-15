@@ -1,4 +1,7 @@
 import type {
+  CdcExportStatus,
+  CdcItemStatus,
+  CdcObtentionMethod,
   DiplomaStatus,
   Role,
   SchoolPlan,
@@ -82,6 +85,16 @@ export interface WalletDiplomaDTO {
   rncp: string | null;
   issuedAt: string;
   status: DiplomaStatus;
+  /** Server-computed gate: feature enabled, issuer key active, diploma active,
+      and issuing school still approved. */
+  eudiExportAvailable: boolean;
+}
+
+/** Short-lived OpenID4VCI offer shown to the authenticated diploma holder. */
+export interface EudiOfferDTO {
+  offerDeepLink: string;
+  txCode: string;
+  expiresAt: string;
 }
 
 export interface ShareLinkDTO {
@@ -90,6 +103,8 @@ export interface ShareLinkDTO {
   expiresAt: string | null;
   revoked: boolean;
   createdAt: string;
+  /** Fields the holder chose to reveal via this link (v2 selective disclosure). */
+  disclosedFields: string[];
 }
 
 export interface VerificationChallengeDTO {
@@ -97,10 +112,139 @@ export interface VerificationChallengeDTO {
   expiresAt: string;
 }
 
+/** The `ed25519-sd-v2` signed object (only id/schoolId visible; fields → digests). */
+export interface SdPayloadDTO {
+  v: "sd-v2";
+  h: "sha-256";
+  id: string;
+  schoolId: string;
+  /** Salted per-field digests, sorted lexicographically. */
+  _sd: string[];
+}
+
+/**
+ * A signed checkpoint (STH) of the public issuance log (v2.md §V3-1): the
+ * CertifyChain PKI root signs `{treeSize, rootHash, timestamp}`. Anchoring is
+ * asynchronous (OpenTimestamps → Bitcoin, a few hours): `otsAnchored` only
+ * turns true once the proof is upgraded — never claim "anchored" before.
+ */
+export interface LogCheckpointDTO {
+  treeSize: number;
+  /** Hex RFC 6962 Merkle root of the issuance log at `treeSize`. */
+  rootHash: string;
+  timestamp: string;
+  /** Base64 — the CertifyChain root signs {treeSize, rootHash, timestamp}. */
+  signature: string;
+  otsAnchored: boolean;
+  otsUpgradedAt: string | null;
+  /** Base64 detached `.ots` proof, null until anchored in a Bitcoin block. */
+  otsProof: string | null;
+}
+
+/** RFC 6962 inclusion proof tying one issuance-log leaf to a signed checkpoint. */
+export interface TransparencyProofDTO {
+  leafIndex: number;
+  /** Hex RFC 6962 leaf hash (SHA-256(0x00 ‖ canonical leaf) — no PII by construction). */
+  leafHash: string;
+  /** Hex audit path (RFC 6962 §2.1.1), leaf and root excluded. */
+  auditPath: string[];
+  checkpoint: LogCheckpointDTO;
+}
+
+/**
+ * RFC 6962 consistency proof (`GET /log/consistency`): lets a third party check
+ * that the tree at `toSize` is an append-only extension of the tree at `fromSize`
+ * (no leaf was ever removed or rewritten). All values are public hex — zero PII.
+ */
+export interface LogConsistencyDTO {
+  fromSize: number;
+  toSize: number;
+  /** Hex RFC 6962 root at `fromSize`. */
+  fromRoot: string;
+  /** Hex RFC 6962 root at `toSize`. */
+  toRoot: string;
+  /** Hex consistency proof (RFC 6962 §2.1.2). */
+  proof: string[];
+}
+
+/**
+ * A self-contained v2 proof (v2.md §V1-2): everything a recruiter needs to verify
+ * a diploma OFFLINE in their own browser — the signed payload, the school's
+ * Ed25519 signature, ONLY the disclosures the holder chose, the school
+ * certificate + PKI root to chain trust, and a point-in-time revocation snapshot.
+ * `disclosures` carries base64url `[salt, name, value]` triples; hidden fields
+ * appear only as opaque digests in `payload._sd`, never as values.
+ */
+export interface ProofBundleDTO {
+  engine: "ed25519-sd-v2";
+  payload: SdPayloadDTO;
+  /** Base64 Ed25519 signature (by the school) of the SHA-256 of the payload. */
+  signature: string;
+  /** Only the fields the holder disclosed to this recruiter. */
+  disclosures: string[];
+  school: {
+    id: string;
+    name: string;
+    /** SPKI PEM. */
+    publicKey: string;
+    /** Base64 — CertifyChain root signs {schoolId, publicKey, name, issuedAt}. */
+    certificate: string;
+    certIssuedAt: string;
+  };
+  root: {
+    /** SPKI PEM of the CertifyChain PKI root. */
+    publicKey: string;
+  };
+  revocation: {
+    checkedAt: string;
+    status: "active" | "revoked";
+    /** Public URL to re-check revocation independently of the share link. */
+    source: string;
+  };
+  /** Public issuance-log inclusion proof (v2.md §V3-4). Absent/null = diploma
+      issued before the transparency log. */
+  transparency?: TransparencyProofDTO | null;
+}
+
+/* ── Transparency log — school journal (v2.md §V3-6) ─────────────────────── */
+
+/**
+ * One row of a school's own issuance journal (authenticated portal, so full PII
+ * on the school's OWN diplomas is fine — unlike the public log leaf, which is PII-free).
+ */
+export interface SchoolJournalEntryDTO {
+  leafIndex: number;
+  diplomaId: string;
+  holderName: string;
+  programTitle: string;
+  issuedAt: string;
+  /** When the issuance was appended to the public transparency log. */
+  loggedAt: string;
+  /** Set once the school flagged this entry as an issuance it did not make. */
+  reportedAt: string | null;
+}
+
+export interface SchoolJournalDTO {
+  items: SchoolJournalEntryDTO[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** Non-null once the school reported a rogue entry: issuance is suspended
+      until a platform admin unfreezes (verification of existing diplomas is intact). */
+  issuanceFrozenAt: string | null;
+}
+
+/** Result of flagging a journal entry the school did not issue. */
+export interface ReportJournalResultDTO {
+  ok: true;
+  issuanceFrozenAt: string;
+}
+
 /** What the recruiter sees — minimal disclosure, no document content. */
 export interface VerificationResultDTO {
   result: VerificationResult;
   engine: string;
+  /** Legacy v1 minimal disclosure (fixed fields). Absent for v2. */
   diploma?: {
     holderName: string;
     programTitle: string;
@@ -110,12 +254,104 @@ export interface VerificationResultDTO {
     schoolName: string;
     issuerCertificateValid: boolean;
   };
+  /** v2 selective disclosure: the offline-verifiable bundle. Null for v1. */
+  proofBundle: ProofBundleDTO | null;
+  /** v2: field→value map DERIVED from the verified bundle (only disclosed fields). */
+  disclosed?: Record<string, unknown>;
+  /** v2: number of fields the holder kept hidden. */
+  hiddenCount?: number;
 }
 
 export interface ImportResultDTO {
   imported: number;
   skipped: number;
   errors: { row: number; message: string }[];
+}
+
+/**
+ * Public revocation oracle response (`GET /verify/revocation/:id`). Only ACTIVE
+ * diplomas return 200; revoked AND unknown ids both return a uniform 404
+ * (anti-enumeration — a holder of a valid bundle reads a 404 as "revoked").
+ */
+export interface RevocationStatusDTO {
+  status: "active" | "revoked";
+  checkedAt: string;
+}
+
+/* ── Accrochage CDC (Passeport de compétences) ───────────────────────────── */
+
+export interface CdcSettingsDTO {
+  enabled: boolean;
+  certificateurSiret: string;
+  contactEmail: string | null;
+  /** CDC-issued 8-character identifier of the XML emitter. */
+  emitterIdClient: string | null;
+  /** CDC-issued 8-character identifier of the certificateur. */
+  certificateurIdClient: string | null;
+  /** Contract identifier assigned by the CDC (1–20 characters). */
+  contractId: string | null;
+}
+
+export interface CdcEligibleDiplomaDTO {
+  id: string;
+  holderName: string;
+  programTitle: string;
+  /** Eligible rows always carry an RNCP code. */
+  rncp: string;
+  issuedAt: string;
+  identityComplete: boolean;
+  inFlight: boolean;
+}
+
+export interface CdcExportCountsDTO {
+  total: number;
+  accepted: number;
+  rejected: number;
+  pending: number;
+}
+
+export interface CdcExportDTO {
+  id: string;
+  status: CdcExportStatus;
+  fileName: string;
+  fileSha256: string;
+  generatedAt: string;
+  submittedAt: string | null;
+  resolvedAt: string | null;
+  counts: CdcExportCountsDTO;
+}
+
+export interface CdcExportItemDTO {
+  diplomaId: string;
+  holderName: string;
+  programTitle: string;
+  status: CdcItemStatus;
+  rejectCode: string | null;
+  rejectReason: string | null;
+}
+
+export interface CdcExportDetailDTO extends CdcExportDTO {
+  items: CdcExportItemDTO[];
+}
+
+export interface CdcExportListDTO {
+  items: CdcExportDTO[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** Per-line CSV outcome. Sensitive identity values are deliberately absent. */
+export interface CdcIdentityImportResultDTO {
+  imported: number;
+  errors: { line: number; message: string }[];
+}
+
+/** Safe summary usable by identity forms without ever returning a NIR. */
+export interface CdcIdentitySummaryDTO {
+  diplomaId: string;
+  identityComplete: boolean;
+  obtentionMethod: CdcObtentionMethod;
 }
 
 /* ── Ownership verification (verify.md) ───────────────────────────────────── */
@@ -293,6 +529,8 @@ export interface AdminSchoolDetailDTO {
   verifiedOfficialDomain: string | null;
   contactEmail: string | null;
   hasKeys: boolean;
+  /** Activation du module réglementaire France Compétences, contrôlée par la plateforme. */
+  cdcEnabled: boolean;
   validationScore: number | null;
   validationReasoning: string | null;
   validationModel: string | null;
@@ -303,6 +541,9 @@ export interface AdminSchoolDetailDTO {
   /** Concise "what's good / what's off" breakdown behind the AI score. */
   validationSignals: ValidationSignal[] | null;
   statusReason: string | null;
+  /** Non-null when issuance is frozen following a transparency-journal report
+      (v2.md §V3-6) — an admin can lift it with POST /admin/schools/:id/unfreeze. */
+  issuanceFrozenAt: string | null;
   createdAt: string;
   approvedAt: string | null;
   reviewedAt: string | null;

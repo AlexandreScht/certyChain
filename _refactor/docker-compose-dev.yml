@@ -33,6 +33,13 @@ services:
       # Pas de reverse proxy en local → ne pas faire confiance aux en-têtes XFF.
       TRUST_PROXY: "false"
       WEB_ORIGIN: http://localhost:3000
+      # Gate EUDI local : le seed provisionne la clé ES256 et le smoke joue le
+      # flux OpenID4VCI complet. La valeur par défaut produit reste désactivée.
+      VC_EXPORT_ENABLED: "true"
+      PUBLIC_API_ORIGIN: http://localhost:4000
+      # Journal de transparence : ancrage OTS désactivé en dev/smoke (aucun réseau
+      # requis). Les checkpoints restent signés et vérifiables localement.
+      OTS_CALENDARS: ""
       # ── Email → Mailpit (capture OTP + notifications) ───────────────────────
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"

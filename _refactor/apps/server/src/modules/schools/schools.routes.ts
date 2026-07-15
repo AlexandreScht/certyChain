@@ -3,7 +3,12 @@ import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { RATE_LIMIT } from "../../config/constants";
 import { env } from "../../config/env";
-import { RegisterSchoolSchema, WaitlistSchema } from "@certifychain/contract/schemas";
+import {
+  ListJournalQuerySchema,
+  RegisterSchoolSchema,
+  ReportJournalEntrySchema,
+  WaitlistSchema,
+} from "@certifychain/contract/schemas";
 import { db } from "../../db/client";
 import { type School, schoolAdmins, schools } from "../../db/schema";
 import type { AppEnv } from "../../http/types";
@@ -26,6 +31,7 @@ import {
   toSchoolDTO,
 } from "./schools.service";
 import { computeSchoolValidation, maybeAutoValidate } from "./validation.service";
+import { getSchoolJournal, reportJournalEntry } from "../transparency/journal.service";
 
 /** Postgres unique-constraint violation (e.g. two schools racing on one SIRET). */
 function isUniqueViolation(e: unknown): boolean {
@@ -228,5 +234,32 @@ export const schoolsRoutes = new Hono<AppEnv>()
     });
 
     return c.json(toSchoolDTO(updated));
+  },
+  )
+
+/** GET /schools/journal — the school's own transparency journal (paginated). */
+  .get(
+  "/journal",
+  requireAuth("school_admin"),
+  zValidator("query", ListJournalQuerySchema),
+  async (c) => {
+    const { schoolId } = getAuth(c);
+    if (!schoolId) throw fail.forbidden();
+    return c.json(await getSchoolJournal(schoolId, c.req.valid("query")));
+  },
+  )
+
+/** POST /schools/journal/report — flag an issuance the school did not make.
+    Freezes further issuance until a platform admin unfreezes (v2.md §V3-6). */
+  .post(
+  "/journal/report",
+  requireAuth("school_admin"),
+  csrfProtect(),
+  zValidator("json", ReportJournalEntrySchema),
+  async (c) => {
+    const { schoolId } = getAuth(c);
+    if (!schoolId) throw fail.forbidden();
+    const { diplomaId, reason } = c.req.valid("json");
+    return c.json(await reportJournalEntry(schoolId, diplomaId, reason));
   },
   )

@@ -16,6 +16,7 @@ import {
   type AuditEntry,
   auditLog,
   auditTypeEnum,
+  cdcSettings,
   diplomas,
   refreshSessions,
   schoolAdmins,
@@ -26,6 +27,7 @@ import { fail } from "../../lib/http-error";
 import { recordAudit } from "../audit/audit.service";
 import { toDiplomaDTO } from "../diplomas/diplomas.service";
 import { getSchoolById, getSchoolStats, toSchoolDTO } from "../schools/schools.service";
+import { clearVcStatusCache } from "../vc/vc.service";
 
 function toAdminAuditDTO(entry: AuditEntry, schoolName: string | null): AdminAuditEntryDTO {
   return {
@@ -152,6 +154,11 @@ export async function getSchoolDetailForAdmin(id: string): Promise<AdminSchoolDe
   if (!school) throw fail.notFound("Établissement introuvable");
 
   const admins = await db.select().from(schoolAdmins).where(eq(schoolAdmins.schoolId, id));
+  const [cdc] = await db
+    .select({ enabled: cdcSettings.enabled })
+    .from(cdcSettings)
+    .where(eq(cdcSettings.schoolId, id))
+    .limit(1);
   const stats = await getSchoolStats(id);
   const recentAudit = await db
     .select({ entry: auditLog, schoolName: schools.name })
@@ -171,6 +178,7 @@ export async function getSchoolDetailForAdmin(id: string): Promise<AdminSchoolDe
     verifiedOfficialDomain: school.verifiedOfficialDomain,
     contactEmail: school.contactEmail,
     hasKeys: toSchoolDTO(school).hasKeys,
+    cdcEnabled: cdc?.enabled ?? false,
     validationScore: school.validationScore,
     validationReasoning: school.validationReasoning,
     validationModel: school.validationModel,
@@ -180,6 +188,7 @@ export async function getSchoolDetailForAdmin(id: string): Promise<AdminSchoolDe
     sireneLegalName: school.sireneLegalName,
     validationSignals: school.validationSignals ?? null,
     statusReason: school.statusReason,
+    issuanceFrozenAt: school.issuanceFrozenAt ? school.issuanceFrozenAt.toISOString() : null,
     createdAt: school.createdAt.toISOString(),
     approvedAt: school.approvedAt ? school.approvedAt.toISOString() : null,
     reviewedAt: school.reviewedAt ? school.reviewedAt.toISOString() : null,
@@ -232,6 +241,7 @@ export async function rejectSchool(id: string, reason: string, adminId: string):
     .update(schools)
     .set({ status: "rejected", statusReason: reason, reviewedByAdminId: adminId, reviewedAt: new Date() })
     .where(eq(schools.id, id));
+  clearVcStatusCache();
   await revokeSchoolAdminSessions(id);
   await recordAudit({ type: "school_rejected", schoolId: id, metadata: { reason } });
 }
@@ -244,8 +254,23 @@ export async function revokeSchool(id: string, reason: string, adminId: string):
     .update(schools)
     .set({ status: "revoked", statusReason: reason, reviewedByAdminId: adminId, reviewedAt: new Date() })
     .where(eq(schools.id, id));
+  clearVcStatusCache();
   await revokeSchoolAdminSessions(id);
   await recordAudit({ type: "school_revoked", schoolId: id, metadata: { reason } });
+}
+
+/**
+ * Lifts a transparency-journal freeze (v2.md §V3-6): clears `issuance_frozen_at`
+ * so the school can emit again. No-op (idempotent) when the school isn't frozen.
+ * If fraud is confirmed the admin uses `revokeSchool` instead (existing flow).
+ */
+export async function unfreezeSchool(id: string, adminId: string): Promise<void> {
+  const school = await getSchoolById(id);
+  if (!school) throw fail.notFound("Établissement introuvable");
+  if (!school.issuanceFrozenAt) return;
+
+  await db.update(schools).set({ issuanceFrozenAt: null }).where(eq(schools.id, id));
+  await recordAudit({ type: "school_unfrozen", schoolId: id, metadata: { by: adminId } });
 }
 
 /* ── Global diplomas oversight (read-only) ────────────────────────────────── */

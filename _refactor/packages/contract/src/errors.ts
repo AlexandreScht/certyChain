@@ -12,6 +12,7 @@ export const ERROR_CODES = [
   "otp_expired",
   "otp_locked",
   "school_not_approved",
+  "issuance_frozen",
   "verification_unavailable",
   "verification_in_progress",
   "verification_failed",

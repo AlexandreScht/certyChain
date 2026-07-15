@@ -4,7 +4,7 @@ import { VerifyExperience } from "@/components/verify/VerifyExperience";
 export const metadata: Metadata = {
   title: "Vérification d'un diplôme — CertifyChain",
   description:
-    "Vérifiez instantanément l'authenticité d'un diplôme numérique via une preuve à divulgation nulle (ZKP). Aucune inscription requise.",
+    "Vérifiez instantanément l'authenticité d'un diplôme numérique : signature de l'établissement émetteur, certificat PKI et statut de révocation. Aucune inscription requise.",
   robots: { index: false, follow: false },
 };
 

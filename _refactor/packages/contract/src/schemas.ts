@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { CDC_UPLOAD_LIMITS } from "./constants";
+import { CDC_OBTENTION_METHODS, DISCLOSABLE_FIELDS } from "./enums";
 
 /* ── Reusable primitives ────────────────────────────────────────────────── */
 
@@ -73,17 +75,104 @@ export const RevokeDiplomaSchema = z.object({
   reason: z.string().trim().max(280).optional(),
 });
 
+/* ── Accrochage CDC (Passeport de compétences) ─────────────────────────── */
+
+const cdcIdClientSchema = z.string().trim().length(8, "Identifiant client CDC = 8 caractères");
+const cdcContractIdSchema = z.string().trim().min(1).max(20);
+
+export const UpdateCdcSettingsSchema = z.object({
+  certificateurSiret: z.string().trim().regex(/^\d{14}$/, "SIRET = 14 chiffres"),
+  contactEmail: emailSchema.nullable(),
+  emitterIdClient: cdcIdClientSchema.nullable(),
+  certificateurIdClient: cdcIdClientSchema.nullable(),
+  contractId: cdcContractIdSchema.nullable(),
+});
+
+export const CdcIdentityFormSchema = z.object({
+  diplomaId: z.string().uuid(),
+  // Strong checksum validation and normalization deliberately stay server-side.
+  nir: z.string().trim().min(13).max(20),
+  birthLastName: z.string().trim().min(1).max(60),
+  obtentionMethod: z.enum(CDC_OBTENTION_METHODS),
+});
+
+export const CreateCdcExportSchema = z.object({
+  diplomaIds: z
+    .array(z.string().uuid())
+    .min(1, "Sélectionnez au moins un diplôme")
+    .max(500, "Un lot CDC ne peut pas dépasser 500 diplômes")
+    .refine((ids) => new Set(ids).size === ids.length, {
+      message: "Un même diplôme ne peut apparaître qu'une fois dans le lot",
+    }),
+});
+
+/** Phase B CRT payload. The transport also enforces a byte-oriented body cap. */
+export const CdcCrtUploadSchema = z.object({
+  content: z
+    .string()
+    .min(1, "Compte rendu CDC vide")
+    .max(CDC_UPLOAD_LIMITS.crt, "Compte rendu CDC trop volumineux (max 2 Mo)")
+    .refine((content) => content.trim().length > 0, "Compte rendu CDC vide"),
+});
+
+export const ListCdcExportsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+/** Platform-admin activation switch; certificateur data is edited separately. */
+export const SetCdcModuleEnabledSchema = z.object({ enabled: z.boolean() });
+
 /* ── Wallet / share ─────────────────────────────────────────────────────── */
 
 export const CreateShareLinkSchema = z.object({
   /** Number of days until expiry, or null for a permanent link. */
   expiresInDays: z.number().int().min(1).max(365).nullable().default(null),
+  /**
+   * The v2 fields the holder agrees to reveal to this recruiter. Validated against
+   * the fixed whitelist of 7 (any other name → fail.validation); duplicates are
+   * rejected. Omitted ⇒ the server applies the default disclosed set. Ignored for
+   * legacy v1 diplomas.
+   */
+  disclosedFields: z
+    .array(z.enum(DISCLOSABLE_FIELDS))
+    .min(1, "Sélectionnez au moins un champ à révéler")
+    .refine((fields) => new Set(fields).size === fields.length, {
+      message: "Un même champ ne peut apparaître qu'une fois",
+    })
+    .optional(),
 });
 
 /* ── Public verification ────────────────────────────────────────────────── */
 
 export const VerifyProofSchema = z.object({
   nonce: z.string().min(10).max(200),
+});
+
+/* ── Transparency log (v2.md §V3) ───────────────────────────────────────── */
+
+/** Public consistency-proof query: 1 ≤ from ≤ to (upper bound checked server-side
+    against the current tree size). Coerced from the query string. */
+export const LogConsistencyQuerySchema = z
+  .object({
+    from: z.coerce.number().int().min(1),
+    to: z.coerce.number().int().min(1),
+  })
+  .refine((v) => v.from <= v.to, {
+    message: "from doit être ≤ to",
+    path: ["from"],
+  });
+
+/** School journal listing (authenticated school portal). */
+export const ListJournalQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+/** Flag an issuance the school did not make (freezes further issuance). */
+export const ReportJournalEntrySchema = z.object({
+  diplomaId: z.string().uuid(),
+  reason: z.string().trim().max(500).optional(),
 });
 
 /* ── Ownership verification (verify.md) ─────────────────────────────────── */
@@ -124,8 +213,17 @@ export type VerifyOtpInput = z.infer<typeof VerifyOtpSchema>;
 export type CreateDiplomaInput = z.infer<typeof CreateDiplomaSchema>;
 export type ListDiplomasQuery = z.infer<typeof ListDiplomasQuerySchema>;
 export type RevokeDiplomaInput = z.infer<typeof RevokeDiplomaSchema>;
+export type UpdateCdcSettingsInput = z.infer<typeof UpdateCdcSettingsSchema>;
+export type CdcIdentityFormInput = z.infer<typeof CdcIdentityFormSchema>;
+export type CreateCdcExportInput = z.infer<typeof CreateCdcExportSchema>;
+export type CdcCrtUploadInput = z.infer<typeof CdcCrtUploadSchema>;
+export type ListCdcExportsQuery = z.infer<typeof ListCdcExportsQuerySchema>;
+export type SetCdcModuleEnabledInput = z.infer<typeof SetCdcModuleEnabledSchema>;
 export type CreateShareLinkInput = z.infer<typeof CreateShareLinkSchema>;
 export type VerifyProofInput = z.infer<typeof VerifyProofSchema>;
+export type LogConsistencyQuery = z.infer<typeof LogConsistencyQuerySchema>;
+export type ListJournalQuery = z.infer<typeof ListJournalQuerySchema>;
+export type ReportJournalEntryInput = z.infer<typeof ReportJournalEntrySchema>;
 
 /* ── MFA (TOTP) — shared by school & platform admin login ────────────────── */
 

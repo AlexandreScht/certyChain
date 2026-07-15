@@ -33,6 +33,9 @@ export const fail = {
     new AppError(429, "otp_locked", m),
   schoolNotApproved: (m = "Établissement non approuvé") =>
     new AppError(403, "school_not_approved", m),
+  issuanceFrozen: (
+    m = "Émissions suspendues : un signalement du journal de transparence est en cours d'instruction par un administrateur CertifyChain.",
+  ) => new AppError(403, "issuance_frozen", m),
   verificationUnavailable: (m = "Méthode de vérification indisponible") =>
     new AppError(409, "verification_unavailable", m),
   verificationInProgress: (m = "Une vérification est déjà en cours") =>
