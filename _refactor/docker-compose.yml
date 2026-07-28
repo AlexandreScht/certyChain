@@ -67,6 +67,10 @@ services:
       # ── Config NON sensible (versionnée) ───────────────────────────────────
       NODE_ENV: production
       PORT: "4000"
+      # Seuil du logger (🟢, docs/architecture.md §12.2). Non renseigné → défaut
+      # dérivé de NODE_ENV ("info" en prod) — voir config/env.ts `logLevel`.
+      # Passer "debug" temporairement pour investiguer un incident, sans rebuild.
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       # La DB est jointe via le réseau interne (host = "db") ; seul le mot de
       # passe (secret) provient du `.env`.
       DATABASE_URL: postgresql://certify:${POSTGRES_PASSWORD}@db:5432/certifychain
@@ -77,7 +81,10 @@ services:
       WALLET_ORIGIN: ${WALLET_ORIGIN:-http://localhost:3001}
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:3002}
       # Identité publique OpenID4VCI de la plateforme (HTTPS obligatoire en prod).
-      PUBLIC_API_ORIGIN: ${PUBLIC_API_ORIGIN:-http://localhost:4000}
+      # Défaut local en 127.0.0.1 (et non localhost) : c'est l'URL que le client
+      # rappelle, or `localhost` se résout d'abord en ::1 côté Node alors que
+      # Docker ne publie les ports qu'en IPv4 (cf. docker-compose-dev.yml).
+      PUBLIC_API_ORIGIN: ${PUBLIC_API_ORIGIN:-http://127.0.0.1:4000}
       # Sessions
       ACCESS_TOKEN_TTL: "900"
       REFRESH_TOKEN_TTL: "2592000"
@@ -88,7 +95,11 @@ services:
       # renseigne. Défaut "false" : cette stack de base n'a PAS de proxy, donc
       # faire confiance à XFF laisserait un client usurper son IP et contourner le
       # rate-limit (VERIFY_IP, REGISTER_IP, VERIFICATION_IP…). Passer "true"
-      # EXPLICITEMENT une fois un vrai reverse proxy déployé devant l'API.
+      # EXPLICITEMENT une fois un vrai reverse proxy déployé devant l'API — le
+      # profil compose "proxy" (service `caddy` ci-dessous) EN EST un : surcharger
+      # `TRUST_PROXY=true` (et `API_BIND=127.0.0.1` sur le port publié plus bas)
+      # dès qu'il est utilisé, sinon `clientIp()` (lib/net.ts) continue de lire
+      # le TCP peer direct — Caddy, pas le vrai visiteur — pour le rate-limit.
       TRUST_PROXY: ${TRUST_PROXY:-false}
       # Rate limiting (par IP / fenêtre)
       RATE_LIMIT_WINDOW: "60"
@@ -107,6 +118,16 @@ services:
       # Liste CSV de calendriers publics (NON sensible). Vide → ancrage désactivé
       # (dégradation propre : checkpoints signés mais sans preuve Bitcoin).
       OTS_CALENDARS: ${OTS_CALENDARS:-https://a.pool.opentimestamps.org,https://b.pool.opentimestamps.org,https://finney.calendar.eternitywall.com}
+      # ── V4 — Post-quantique hybride (ML-DSA-65 / FIPS 204) ──────────────────
+      # 'require' (DÉFAUT depuis 2026-07-28 — voir config/env.ts) : le serveur
+      # refuse de démarrer sans une paire ML-DSA-65 racine valide. NON sensible
+      # (surchargeable, par exemple à "off" en dev rapide) ; les clés racine PQ
+      # (CERTIFYCHAIN_ROOT_PQ_*) sont des secrets et proviennent du `.env`
+      # (env_file ci-dessus), comme les clés racine Ed25519. ⚠️ Ce fallback DOIT
+      # rester aligné sur le défaut Zod de `config/env.ts` — sinon un `.env` qui
+      # omet PQ_POLICY démarrerait "off" en conteneur alors que tout le reste
+      # (doc, .env.example, message d'erreur au boot) promet "require".
+      PQ_POLICY: ${PQ_POLICY:-require}
       # Applique les migrations Drizzle au démarrage (pratique en conteneur).
       MIGRATE_ON_START: "true"
       # Registre SIRENE (INSEE) — base + header (la CLÉ est un secret du .env).
@@ -135,8 +156,10 @@ services:
       POSTAL_DISPATCH_EMAIL: ${POSTAL_DISPATCH_EMAIL:-postal-dispatch@certifychain.local}
       # ── Email (SMTP) ───────────────────────────────────────────────────────
       # En prod : configurer le provider via le `.env` (SMTP_HOST/PORT/USER/
-      # PASSWORD/SECURE/FROM). Vide → les emails retombent dans les logs.
-      # En dev, la surcharge compose pointe vers Mailpit.
+      # PASSWORD/SECURE/STARTTLS/FROM — SECURE et STARTTLS sont deux modes TLS
+      # mutuellement exclusifs, voir `docs/email/README.md`). Vide → les
+      # emails retombent dans les logs. En dev, la surcharge compose pointe
+      # vers Mailpit.
     depends_on:
       db:
         condition: service_healthy
@@ -172,12 +195,22 @@ services:
       dockerfile: apps/client/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        # Root pinning (audit 2026-07-27): SAME base64 values as the server's
+        # own CERTIFYCHAIN_ROOT_PUBLIC_KEY / CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY
+        # (`.env`) — reused verbatim, never re-derived, so the browser and the
+        # server can never silently drift onto different roots. Empty (unset
+        # `.env`) → the offline verifier refuses every bundle explicitly; see
+        # `.env.example` and `src/lib/trusted-roots.ts` for why.
+        NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PUBLIC_KEY:-}
+        NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY:-}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+      NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PUBLIC_KEY:-}
+      NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY:-}
     depends_on:
       server:
         condition: service_healthy
@@ -211,12 +244,18 @@ services:
       dockerfile: apps/client/wallet/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        # Root pinning (audit 2026-07-27) — parity with `web` (unused by any
+        # wallet source today; see `apps/client/wallet/Dockerfile`).
+        NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PUBLIC_KEY:-}
+        NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY:-}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: "3001"
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+      NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PUBLIC_KEY:-}
+      NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY:-}
     depends_on:
       server:
         condition: service_healthy
@@ -251,12 +290,18 @@ services:
       dockerfile: apps/client/admin/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        # Root pinning (audit 2026-07-27) — parity with `web` (unused by any
+        # admin source today; see `apps/client/admin/Dockerfile`).
+        NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PUBLIC_KEY:-}
+        NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY:-}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: "3002"
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+      NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PUBLIC_KEY:-}
+      NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY: ${CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY:-}
     depends_on:
       server:
         condition: service_healthy
@@ -286,10 +331,57 @@ services:
       resources:
         limits: { cpus: "1.0", memory: 384M }
 
+  # ── TLS en transit (P1, docs/architecture.md §12.2) ────────────────────────
+  # Reverse-proxy OPTIONNEL (profil compose "proxy" — absent des déploiements
+  # par défaut, cf. `docker compose up` sans `--profile`) : TLS automatique
+  # Let's Encrypt (ACME HTTP-01) devant l'API, config minimale (`./Caddyfile`).
+  # Activation :
+  #   API_DOMAIN=api.example.com CADDY_ACME_EMAIL=vous@example.com \
+  #     docker compose --profile proxy up --build -d
+  # ⚠️ Une fois ce profil utilisé, PASSE aussi TRUST_PROXY=true et
+  # API_BIND=127.0.0.1 (voir le service `server` ci-dessus) — sinon l'API reste
+  # doublement exposée en clair sur l'hôte ET ignore les en-têtes du proxy.
+  caddy:
+    image: caddy:2.10-alpine
+    profiles: ["proxy"]
+    restart: unless-stopped
+    environment:
+      # Nom de domaine public de l'API — REQUIS pour activer ce profil, mais
+      # en valeur PAR DÉFAUT (pas `:?required`) : Compose interpole
+      # l'`environment:` de TOUS les services au parsing, même ceux d'un
+      # profil inactif (vérifié : `docker compose up` sans `--profile proxy`
+      # échouerait sinon sur cette variable absente, alors que le service ne
+      # démarre même pas). Une valeur absente/par défaut fait donc échouer
+      # Caddy lui-même AU RUN (Caddyfile sans domaine valide), seulement
+      # quand le profil est réellement activé — jamais au parsing pour tout
+      # le monde.
+      API_DOMAIN: ${API_DOMAIN:-}
+      # Contact ACME (Let's Encrypt exige une adresse pour les alertes d'expiration).
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:-admin@certifychain.local}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      # 80 = uniquement le challenge ACME HTTP-01 (Caddy redirige le reste en 443).
+      - "80:80"
+      - "443:443"
+    depends_on:
+      server:
+        condition: service_healthy
+    networks: [frontend]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
 networks:
   backend:
     internal: true   # DB isolée : aucune route vers l'extérieur
   frontend:
 
 volumes:
+  caddy_data:    # Certificats Let's Encrypt (persistants — pas de re-émission à chaque redeploy).
+  caddy_config:  # État interne Caddy (autosave config).
   pgdata:

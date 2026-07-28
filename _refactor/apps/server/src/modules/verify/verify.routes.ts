@@ -2,7 +2,7 @@ import { zValidator } from "../../lib/validator";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
-import { verifyProofBundle } from "@certifychain/shared/crypto/verify-bundle";
+import { verifyProofBundle, type TrustedRoots } from "@certifychain/shared/crypto/verify-bundle";
 import { VerifyProofSchema } from "@certifychain/contract/schemas";
 import type {
   ProofBundleDTO,
@@ -25,12 +25,14 @@ import {
   type School,
 } from "../../db/schema";
 import {
-  certifychainRootPublicKeyPem,
+  certifychainRootPqPublicKeyB64,
+  certifychainTrustedEd25519Roots,
+  certifychainTrustedMlDsaRoots,
   digestOf,
   ed25519NonceEngine,
   engineFor,
+  findTrustedEd25519RootFor,
   keyVault,
-  verifySchoolCertificate,
   type Disclosure,
   type ProofEngine,
 } from "../../crypto";
@@ -42,6 +44,29 @@ import { checkpointService, toLogCheckpointDTO } from "../transparency/checkpoin
 import { inclusionProofHex } from "../transparency/merkle";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The CertifyChain PKI root(s) THIS SERVER trusts (audit 2026-07-27 root-
+ * pinning fix, extended 2026-07-28 to a real list) — computed once from
+ * `config/env.ts`, NEVER read back from a bundle under verification
+ * (`verifyProofBundle`/`verifyTransparency` reject before checking anything
+ * else when a bundle's own root isn't in this list).
+ *
+ * A LIST, not a single key: root rotation (docs/security/root-secrets-
+ * rotation.md §4) keeps an outgoing root here alongside the incoming one
+ * during the switch-over window, so a school certificate signed under
+ * EITHER still verifies — `CERTIFYCHAIN_ROOT_PUBLIC_KEY` /
+ * `CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY` are comma-separated in `.env` (same
+ * convention as the browser's `NEXT_PUBLIC_*` pinning,
+ * `apps/client/web/src/lib/trusted-roots.ts`) and `config/env.ts` splits them
+ * once into `certifychainRootPublicKeys` / `certifychainRootPqPublicKeys`.
+ * Every `.env` predating this feature has a single, comma-free value, which
+ * yields a one-element list here — unchanged behaviour.
+ */
+const SERVER_TRUSTED_ROOTS: TrustedRoots = {
+  ed25519: certifychainTrustedEd25519Roots(),
+  mlDsa65: env.pqEnabled ? certifychainTrustedMlDsaRoots() : [],
+};
 
 /**
  * Public verification module (no auth, no CSRF). Implements the cahier-des-charges
@@ -181,7 +206,8 @@ export const verifyRoutes = new Hono<AppEnv>()
     .limit(1);
   if (!diplomaRow) return finish("not_found");
   diploma = diplomaRow;
-  const proofVersion = diploma.proofVersion === "v2" ? "v2" : "v1";
+  const proofVersion =
+    diploma.proofVersion === "v3" ? "v3" : diploma.proofVersion === "v2" ? "v2" : "v1";
   engine = engineFor(proofVersion);
   // v1 revoked diplomas fail closed here, strictly as before. v2 diplomas keep
   // producing a (cryptographically valid) bundle carrying `revocation: revoked`
@@ -229,7 +255,13 @@ export const verifyRoutes = new Hono<AppEnv>()
   // The root certificate was signed over issuedAt = the activation/seed date,
   // i.e. the YYYY-MM-DD of the school's approval.
   const certIssuedAt = schoolRow.approvedAt.toISOString().slice(0, 10);
-  const certOk = verifySchoolCertificate(
+  // Tries EVERY currently-trusted root (current signing key + any coexisting
+  // outgoing one, docs/security/root-secrets-rotation.md §4) — a school
+  // approved BEFORE a rotation was certified under the OLD root, so only the
+  // current key would wrongly reject it. `matchedRootPem` is also the exact
+  // key a v2/v3 bundle must embed below (never assume "current" for an
+  // arbitrary school — see `findTrustedEd25519RootFor`'s doc).
+  const matchedRootPem = findTrustedEd25519RootFor(
     {
       schoolId: schoolRow.id,
       publicKey: schoolRow.publicKey,
@@ -239,12 +271,17 @@ export const verifyRoutes = new Hono<AppEnv>()
     schoolRow.certificate,
   );
   // Root-of-trust is a hard gate, not a cosmetic flag: an issuer whose certificate
-  // does not chain to the CertifyChain root is not trusted (cahier §4 step 5).
-  if (!certOk) return finish("not_found");
+  // does not chain to ANY trusted CertifyChain root is not trusted (cahier §4 step 5).
+  if (matchedRootPem === null) return finish("not_found");
+  // Narrowed non-null by the guard above — kept as a named boolean (rather
+  // than a bare literal) for the v1 response DTO's `issuerCertificateValid`.
+  const certOk = true;
 
-  /* ── v2: selective disclosure — build the bundle and let the SHARED verifier
-     decide the verdict (same function the recruiter's browser runs). ───────── */
-  if (proofVersion === "v2") {
+  /* ── v2/v3: selective disclosure — build the bundle and let the SHARED
+     verifier decide the verdict (same function the recruiter's browser runs).
+     v3 additionally carries the ML-DSA-65 material (v2.md §V4-1); the shared
+     verifier deduces the hybrid requirement from `payload.v` alone. ───────── */
+  if (proofVersion === "v2" || proofVersion === "v3") {
     if (!diploma.disclosuresEncrypted) return finish("invalid");
     let allDisclosures: Record<string, Disclosure>;
     try {
@@ -266,16 +303,22 @@ export const verifyRoutes = new Hono<AppEnv>()
     // signed payload; hidden fields appear only as opaque digests.
     const sd = Object.values(allDisclosures).map(digestOf).sort();
 
+    // v3 = v2 + ML-DSA-65 (v2.md §V4-1). The root's PQ public key is attached
+    // whenever PQ is enabled server-side — NOT only for v3 diplomas — because a
+    // v2 diploma's transparency checkpoint (signed independently of any single
+    // diploma's version) may itself already carry a post-quantum signature.
+    const isV3 = proofVersion === "v3";
     const bundle: ProofBundleDTO = {
-      engine: "ed25519-sd-v2",
+      engine: isV3 ? "ed25519-sd-v3" : "ed25519-sd-v2",
       payload: {
-        v: "sd-v2",
+        v: isV3 ? "sd-v3" : "sd-v2",
         h: "sha-256",
         id: diploma.id,
         schoolId: diploma.schoolId,
         _sd: sd,
       },
       signature: diploma.signature,
+      ...(isV3 && diploma.signaturePq ? { signaturePq: diploma.signaturePq } : {}),
       disclosures,
       school: {
         id: schoolRow.id,
@@ -283,8 +326,25 @@ export const verifyRoutes = new Hono<AppEnv>()
         publicKey: schoolRow.publicKey,
         certificate: schoolRow.certificate,
         certIssuedAt,
+        ...(isV3 && schoolRow.publicKeyPq && schoolRow.certificatePq
+          ? { publicKeyPq: schoolRow.publicKeyPq, certificatePq: schoolRow.certificatePq }
+          : {}),
       },
-      root: { publicKey: certifychainRootPublicKeyPem() },
+      root: {
+        // The EXACT root that certified THIS school (found above) — never the
+        // "current" convention key blindly: after a rotation, a school
+        // certified under the OLD root must still embed the OLD root's key
+        // here, or the browser's own cert-chain check (verify-bundle.ts step
+        // 2) would fail even though that root is still trusted server-side.
+        publicKey: matchedRootPem,
+        // PQ root key embedding stays "current" (unlike the Ed25519 one just
+        // above): PQ signature verification lives EXCLUSIVELY in
+        // `packages/shared` (v2.md §6 piège n°6, see the note in
+        // `crypto/keys.ts#certifychainTrustedMlDsaRoots`), so this route
+        // cannot itself find which trusted PQ root actually signed a v3
+        // school's PQ certificate without duplicating that verification here.
+        ...(env.pqEnabled ? { publicKeyPq: certifychainRootPqPublicKeyB64() } : {}),
+      },
       revocation: {
         checkedAt: now.toISOString(),
         status: diploma.status === "revoked" ? "revoked" : "active",
@@ -316,7 +376,7 @@ export const verifyRoutes = new Hono<AppEnv>()
       bundle.transparency = null;
     }
 
-    const outcome = await verifyProofBundle(bundle);
+    const outcome = await verifyProofBundle(bundle, SERVER_TRUSTED_ROOTS);
     if (!outcome.ok) return finish("invalid");
 
     const result: VerificationResult = diploma.status === "revoked" ? "revoked" : "verified";

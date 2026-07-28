@@ -25,6 +25,42 @@ const tsTransform = [
   },
 ];
 
+const path = require("node:path");
+
+/**
+ * Resolves an installed package's ROOT directory starting the Node resolution
+ * algorithm from `fromDir` — needed for transitive dependencies pnpm keeps in
+ * its versioned `.pnpm` store rather than hoisting into a workspace's own
+ * `node_modules` (so no version number is ever hardcoded here). Resolves the
+ * package's MAIN entry (not `./package.json`, which these packages' `exports`
+ * maps deliberately do not expose) and walks up to its directory.
+ */
+function pkgDir(pkg, fromDir) {
+  const mainEntry = require.resolve(pkg, { paths: [fromDir] });
+  // mainEntry is ".../<pkg>/index.js" (or similar) — the package root is one
+  // level up, found by locating the LAST path segment matching the package name.
+  const marker = `${path.sep}${pkg.replace("/", path.sep)}${path.sep}`;
+  const idx = mainEntry.lastIndexOf(marker);
+  if (idx === -1) throw new Error(`pkgDir: could not locate "${pkg}" root in "${mainEntry}"`);
+  return mainEntry.slice(0, idx + marker.length - 1);
+}
+
+const sharedDir = path.join(__dirname, "packages/shared");
+// @noble/post-quantum (V4, ML-DSA-65) IS hoisted into packages/shared's own
+// node_modules (it's shared's direct dependency); @noble/curves is only a
+// TRANSITIVE dependency of post-quantum, so it is resolved relative to it.
+const postQuantumDir = pkgDir("@noble/post-quantum", sharedDir);
+const curvesDir = pkgDir("@noble/curves", postQuantumDir);
+// @noble/post-quantum/@noble/curves pin @noble/hashes@~2.2.0 — a NEWER major
+// than the @noble/hashes@~1.x already hoisted for @noble/ed25519 elsewhere in
+// this repo (which is plain CJS and stays UNMAPPED below). v2.x dropped CJS
+// entirely, so THIS specific instance (resolved from inside the post-quantum
+// dependency tree) needs the same .ts-source bridge — scoped to the two exact
+// deep-import specifiers `curves`/`post-quantum` actually use, so the
+// unrelated `@noble/hashes/sha256` imports used everywhere else in
+// `packages/shared/src/crypto` keep resolving to the older CJS build.
+const hashesForPqDir = pkgDir("@noble/hashes", postQuantumDir);
+
 /** Mappe les packages internes (exports sans build step) vers leurs sources. */
 const workspaceModuleMapper = {
   "^@certifychain/contract$": "<rootDir>/packages/contract/src/index.ts",
@@ -34,6 +70,16 @@ const workspaceModuleMapper = {
   // @noble/ed25519 est ESM-only mais embarque sa source .ts : on la mappe pour
   // que ts-jest la transpile (le require() CJS de l'ESM échouerait).
   "^@noble/ed25519$": "<rootDir>/packages/shared/node_modules/@noble/ed25519/index.ts",
+  // @noble/post-quantum (V4, ML-DSA-65) est ESM-only également, et sa source
+  // ml-dsa.ts importe elle-même deux modules ESM-only de @noble/curves — les
+  // trois sont mappés vers leur source .ts pour la même raison (piège n°11-bis :
+  // require() CJS d'un module ESM échoue). @noble/hashes (utilisé partout
+  // ailleurs) reste non mappé : il ne publie QUE du CJS.
+  "^@noble/post-quantum/ml-dsa\\.js$": path.join(postQuantumDir, "src/ml-dsa.ts"),
+  "^@noble/curves/utils\\.js$": path.join(curvesDir, "src/utils.ts"),
+  "^@noble/curves/abstract/fft\\.js$": path.join(curvesDir, "src/abstract/fft.ts"),
+  "^@noble/hashes/utils\\.js$": path.join(hashesForPqDir, "src/utils.ts"),
+  "^@noble/hashes/sha3\\.js$": path.join(hashesForPqDir, "src/sha3.ts"),
 };
 
 /**

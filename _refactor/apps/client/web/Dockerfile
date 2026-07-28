@@ -33,6 +33,18 @@ COPY apps/client/web ./apps/client/web
 # this the bundle bakes in the localhost default and breaks in production.
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Root pinning (audit 2026-07-27): the offline verifier (`/verifier`,
+# `/verify/[token]`) must NEVER trust the PKI root carried by a bundle it is
+# checking — see `packages/shared/src/crypto/trusted-roots.ts` and
+# `src/lib/trusted-roots.ts`. These MUST be present at THIS build step, not
+# only at runtime: NEXT_PUBLIC_* is inlined into the JS bundle by `next build`,
+# never re-read afterwards. Empty (the default) → the verifier refuses every
+# bundle explicitly rather than silently trusting whatever root it is handed —
+# see `.env.example` for why that degradation was chosen over failing the build.
+ARG NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY=
+ARG NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY=
+ENV NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY=$NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY
+ENV NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY=$NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY
 ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production
 RUN pnpm --filter @certifychain/web build
 

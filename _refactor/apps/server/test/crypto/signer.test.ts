@@ -19,10 +19,12 @@ import { keyVault } from "../../src/crypto/envelope";
 import { generateEd25519KeyPair, signDiplomaHash, verifyEd25519 } from "../../src/crypto/keys";
 import {
   KmsSigner,
+  envelopePqSigner,
   envelopeSigner,
   rawEd25519PublicKeyToSpkiPem,
   resolveSchoolSigner,
 } from "../../src/crypto/signer";
+import { mlDsaVerify } from "@certifychain/shared/crypto/ml-dsa";
 import { createFakeVaultTransit } from "../helpers/fake-vault";
 
 // ── Frozen non-regression vector (Ed25519 is deterministic) ──────────────────
@@ -80,6 +82,34 @@ describe("EnvelopeSigner.createSchoolKey", () => {
   it("stores the private key as an envelope PKCS8 blob (legacy storage format)", async () => {
     const { ref } = await envelopeSigner.createSchoolKey("school-1");
     assert.match(keyVault.decryptToString(ref), /^-----BEGIN PRIVATE KEY-----/);
+  });
+});
+
+describe("EnvelopePqSigner — the school's ML-DSA-65 (post-quantum) key (v2.md §V4-1)", () => {
+  it("createSchoolPqKey returns a public key that verifies signPq's output", async () => {
+    const { publicKeyB64, ref } = await envelopePqSigner.createSchoolPqKey("school-1");
+    const sigB64 = await envelopePqSigner.signPq(ref, HASH_BYTES);
+    assert.equal(
+      mlDsaVerify(Buffer.from(publicKeyB64, "base64"), HASH_BYTES, Buffer.from(sigB64, "base64")),
+      true,
+    );
+  });
+
+  it("mints a distinct key pair on every call", async () => {
+    const a = await envelopePqSigner.createSchoolPqKey("school-1");
+    const b = await envelopePqSigner.createSchoolPqKey("school-1");
+    assert.notEqual(a.publicKeyB64, b.publicKeyB64);
+    assert.notEqual(a.ref, b.ref);
+  });
+
+  it("a signature made with one school's key fails under another's public key", async () => {
+    const a = await envelopePqSigner.createSchoolPqKey("school-a");
+    const b = await envelopePqSigner.createSchoolPqKey("school-b");
+    const sigB64 = await envelopePqSigner.signPq(a.ref, HASH_BYTES);
+    assert.equal(
+      mlDsaVerify(Buffer.from(b.publicKeyB64, "base64"), HASH_BYTES, Buffer.from(sigB64, "base64")),
+      false,
+    );
   });
 });
 
@@ -257,7 +287,10 @@ describe("guard — no plaintext school private key outside signer.ts (DoD V2-2)
     assert.ok(files.some((f) => f.endsWith("diplomas.service.ts")));
   });
 
-  for (const symbol of ["decryptToString", "signDiplomaHash"] as const) {
+  // "mlDsaSign" is the ML-DSA-65 (post-quantum) equivalent of "signDiplomaHash"
+  // (v2.md §V4-1) — a caller must go through `envelopePqSigner.signPq` /
+  // `ensureSchoolPqMaterial`, never call the raw primitive directly.
+  for (const symbol of ["decryptToString", "signDiplomaHash", "mlDsaSign"] as const) {
     it(`no file under modules/schools or modules/diplomas references ${symbol}`, () => {
       for (const file of dirs.flatMap(tsFilesUnder)) {
         assert.ok(

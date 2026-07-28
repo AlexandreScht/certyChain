@@ -78,3 +78,67 @@ describe("rateLimit middleware (coarse IP backstop)", () => {
     assert.equal((await app.request("/p")).status, 429);
   });
 });
+
+/**
+ * Le limiteur lit l'heure via `Date.now()` : ces deux tests pilotent une horloge
+ * MOQUÉE (`mock.timers`, API `Date`) plutôt que d'attendre de vrais `setTimeout`.
+ * Motif : la marge de la fenêtre glissante vaut `windowMs / max` — avec un vrai
+ * sleep, quelques dizaines de ms de gigue de l'event loop (68 suites en
+ * parallèle sous Windows) suffisaient à faire basculer l'assertion. L'horloge
+ * moquée rend le temps écoulé EXACT, donc le résultat déterministe — et la
+ * fenêtre peut redevenir réaliste (60 s) au lieu de 300 ms.
+ */
+describe("rateLimit — sliding window (P7, différent d'une fenêtre fixe)", () => {
+  it("throttles a burst straddling the window boundary (a fixed window would reset fully)", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"] }); // t = 0, restaurée en fin de test
+    const app = new Hono<AppEnv>();
+    app.onError(onError);
+    const windowSec = 60;
+    app.use("*", rateLimit({ key: "test_sliding_boundary", by: "ip", ipMax: 4, windowSec }));
+    app.get("/p", (c) => c.json({ ok: true }));
+
+    // Budget entier consommé à t = 0 (fin de la sous-fenêtre courante).
+    for (let i = 0; i < 4; i += 1) {
+      assert.equal((await app.request("/p")).status, 200);
+    }
+
+    // Juste après la frontière : une fenêtre FIXE remettrait le compteur à zéro
+    // et laisserait passer 4 requêtes de plus (8 en ~61 s, soit 2× max).
+    t.mock.timers.tick(windowSec * 1000 + 1_000); // t = 61 s
+
+    // Fenêtre glissante : la sous-fenêtre précédente pèse encore 59/60 ≈ 98 %,
+    // donc dès la PREMIÈRE requête post-frontière 4 × 0.983 + 1 = 4.93 > 4.
+    assert.equal(
+      (await app.request("/p")).status,
+      429,
+      "the previous sub-window's weight must still apply just past the boundary",
+    );
+
+    // …et c'est bien une décroissance, pas un bannissement : à 55 s dans la
+    // nouvelle sous-fenêtre le poids résiduel tombe à 4 × 0.083 = 0.33 et le
+    // budget redevient disponible (0.33 + 2 = 2.33 ≤ 4).
+    t.mock.timers.tick(54_000); // t = 115 s
+    assert.equal((await app.request("/p")).status, 200);
+  });
+
+  it("fully forgets a key idle for ≥ 2 windows (fresh bucket, no permanent penalty)", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"] });
+    const app = new Hono<AppEnv>();
+    app.onError(onError);
+    const windowSec = 60;
+    app.use("*", rateLimit({ key: "test_sliding_recovery", by: "ip", ipMax: 2, windowSec }));
+    app.get("/p", (c) => c.json({ ok: true }));
+
+    assert.equal((await app.request("/p")).status, 200);
+    assert.equal((await app.request("/p")).status, 200);
+    assert.equal((await app.request("/p")).status, 429, "bucket exhausted");
+
+    // Inactivité de plus de 2 fenêtres pleines : le compteur courant ET le
+    // précédent ont totalement décru — budget neuf, pas une sanction persistante.
+    t.mock.timers.tick(2 * windowSec * 1000 + 1);
+
+    assert.equal((await app.request("/p")).status, 200, "the key must recover after 2 idle windows");
+    assert.equal((await app.request("/p")).status, 200);
+    assert.equal((await app.request("/p")).status, 429);
+  });
+});

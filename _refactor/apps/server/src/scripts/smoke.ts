@@ -33,9 +33,11 @@ import type {
   ProofBundleDTO,
   TransparencyProofDTO,
 } from "@certifychain/contract/dto";
-import { verifyProofBundle } from "@certifychain/shared/crypto/verify-bundle";
+import { verifyProofBundle, type TrustedRoots } from "@certifychain/shared/crypto/verify-bundle";
 import { verifyConsistency, verifyInclusion } from "@certifychain/shared/crypto/merkle";
 import { verifyTransparency } from "@certifychain/shared/crypto/verify-transparency";
+import { env } from "../config/env";
+import { certifychainRootPqPublicKeyB64, certifychainRootPublicKeyPem } from "../crypto";
 import { keyVault } from "../crypto/envelope";
 import { db, sqlClient } from "../db/client";
 import {
@@ -59,6 +61,17 @@ const WALLET = process.env.SMOKE_WALLET_URL ?? "http://127.0.0.1:3001";
 const ADMIN = process.env.SMOKE_ADMIN_URL ?? "http://127.0.0.1:3002";
 const MAILPIT = process.env.SMOKE_MAILPIT_URL ?? "http://127.0.0.1:8025";
 
+// This script runs on the SAME host as the server (it decrypts seeded TOTP
+// secrets straight out of the DB via the KeyVault) so it has direct access to
+// the real root — root pinning (audit 2026-07-27) means `verifyProofBundle`/
+// `verifyTransparency` no longer accept a bundle's own `root.publicKey` as
+// ground truth; the smoke suite must supply the anchor explicitly, exactly
+// like the server route it is exercising over HTTP.
+const TRUSTED_ROOTS: TrustedRoots = {
+  ed25519: [certifychainRootPublicKeyPem()],
+  mlDsa65: env.pqEnabled ? [certifychainRootPqPublicKeyB64()] : [],
+};
+
 const SCHOOL_NAME = "École Démo CertifyChain";
 const SCHOOL_ADMIN_EMAIL = "admin@ecole-demo.fr";
 const SCHOOL_ADMIN_PASSWORD = "DemoPassw0rd!24";
@@ -70,6 +83,19 @@ const ADMIN_CANDIDATES: { email: string; password: string }[] = [
   },
   { email: "admin@certifychain.local", password: "AdminPassw0rd!24" }, // seed fallback
 ];
+
+/**
+ * Moteur de divulgation sélective attendu pour un diplôme émis MAINTENANT, par
+ * cette stack. Il découle de la politique post-quantique active : `PQ_POLICY`
+ * vaut "require" par défaut depuis 2026-07-28, donc l'émission produit du v3
+ * hybride (`ed25519-sd-v3`) ; un opérateur ayant explicitement opté pour
+ * `PQ_POLICY=off` reste sur `ed25519-sd-v2`. Figer le littéral ici ferait
+ * échouer le Gate C sur la politique par défaut — et, pire, laisserait passer
+ * un serveur qui rapporterait « v2 » sur une preuve réellement hybride.
+ * L'assertion reste donc EXACTE (égalité stricte), simplement paramétrée par la
+ * politique, jamais relâchée en « v2 ou v3 ».
+ */
+const EXPECTED_SD_ENGINE = env.pqEnabled ? "ed25519-sd-v3" : "ed25519-sd-v2";
 
 /** Unique per run so re-runs never trip OTP cooldowns or alias reuse. */
 const RUN_ID = Date.now().toString(36);
@@ -867,8 +893,41 @@ async function main(): Promise<void> {
           check("lien révoqué → not_found", vRevokedLink.result === "not_found", vRevokedLink.result);
         }
 
-        /* V1 — divulgation sélective native (ed25519-sd-v2) */
-        section("Divulgation sélective (ed25519-sd-v2)");
+        // P6 (PLAN.md, audit R1) : la fusion publique des 5 états en
+        // « Vérifié / Introuvable » (v4-front §2.2) est une couche de
+        // PRÉSENTATION uniquement — le serveur doit continuer à distinguer
+        // "expired" en interne (API/audit), jamais le confondre avec
+        // "not_found"/"invalid" côté contrat, même si le front leur donne
+        // désormais le même rendu (`FailedCard`). Un lien fraîchement créé
+        // dont l'expiration est forcée dans le passé (le schéma refuse
+        // `expiresInDays <= 0`, d'où la manipulation directe en base, comme
+        // pour les autres scénarios de ce script qui lisent/écrivent la DB).
+        const shareExp = await studentBrowser.req(`/wallet/diplomas/${issuedId}/share`, {
+          json: { expiresInDays: 1 },
+        });
+        const shareExpToken =
+          shareExp.status === 201 ? shareExp.json<{ token: string }>().token : null;
+        if (shareExpToken) {
+          await db
+            .update(shareLinks)
+            .set({ expiresAt: new Date(Date.now() - 60_000) })
+            .where(eq(shareLinks.token, shareExpToken));
+          const vExpired = await runVerify(shareExpToken);
+          check(
+            'P6 : lien expiré → "expired" toujours distinct en interne (5 états API préservés)',
+            vExpired.result === "expired",
+            vExpired.result,
+          );
+        } else {
+          check(
+            'P6 : lien expiré → "expired" toujours distinct en interne (5 états API préservés)',
+            false,
+            `share HTTP ${shareExp.status}`,
+          );
+        }
+
+        /* V1 — divulgation sélective native (ed25519-sd-v2 / -v3 selon PQ_POLICY) */
+        section(`Divulgation sélective (${EXPECTED_SD_ENGINE})`);
         // Oracle de révocation AVANT révocation (comparé plus bas au 404 d'après).
         const oracleBefore = await fetch(`${API}/verify/revocation/${issuedId}`);
         const oracleBeforeBody = oracleBefore.ok
@@ -894,24 +953,28 @@ async function main(): Promise<void> {
           } | null;
           selBundle = selBody?.proofBundle ?? null;
           check(
-            "V1 SD : partage à 2 champs → verified, bundle ed25519-sd-v2 à 2 disclosures",
+            `V1 SD : partage à 2 champs → verified, bundle ${EXPECTED_SD_ENGINE} à 2 disclosures`,
             sel.status === 200 &&
               selBody?.result === "verified" &&
-              selBody.engine === "ed25519-sd-v2" &&
-              selBundle?.engine === "ed25519-sd-v2" &&
+              // Le moteur RAPPORTÉ (réponse + audit) et celui PORTÉ par le bundle
+              // doivent coïncider, et tous deux correspondre à la version réelle
+              // de la preuve : annoncer "v2" sur une preuve hybride sous-déclare
+              // à vie la nature de ce qui a été vérifié.
+              selBody.engine === EXPECTED_SD_ENGINE &&
+              selBundle?.engine === EXPECTED_SD_ENGINE &&
               selBundle.disclosures.length === 2 &&
               selBody.hiddenCount === 5,
             `HTTP ${sel.status} ${sel.text.slice(0, 160)}`,
           );
         } else {
           check(
-            "V1 SD : partage à 2 champs → verified, bundle ed25519-sd-v2 à 2 disclosures",
+            `V1 SD : partage à 2 champs → verified, bundle ${EXPECTED_SD_ENGINE} à 2 disclosures`,
             false,
             `share HTTP ${shareSel.status} ${shareSel.text.slice(0, 160)}`,
           );
         }
 
-        const selLocal = selBundle ? await verifyProofBundle(selBundle) : null;
+        const selLocal = selBundle ? await verifyProofBundle(selBundle, TRUSTED_ROOTS) : null;
         const selLocalOk = selLocal !== null && selLocal.ok ? selLocal : null;
         check(
           "V1 SD : vérification LOCALE du bundle (verifyProofBundle) → ok, 5 champs masqués",
@@ -968,7 +1031,7 @@ async function main(): Promise<void> {
           tpBundle =
             (raw.parsed as { proofBundle?: ProofBundleDTO | null } | null)?.proofBundle ?? null;
         }
-        const tpOutcome = tpBundle ? await verifyTransparency(tpBundle) : null;
+        const tpOutcome = tpBundle ? await verifyTransparency(tpBundle, TRUSTED_ROOTS) : null;
         check(
           'V3 : bundle v2 porte `transparency`, verifyTransparency locale ok, binding "full"',
           tpBundle?.transparency != null &&
@@ -1033,6 +1096,60 @@ async function main(): Promise<void> {
           consistencyLocalOk ? `PII fuite: ${piiNeedles.filter((n) => transparencyBlobs.includes(n)).join(", ")}` : `consistency HTTP ${consistencyStatus}`,
         );
 
+        /* V4-b — Post-quantique hybride, couche présentation (v2.md §V4-1) */
+        section("Post-quantique hybride — présentation (V4-b)");
+
+        // `PQ_POLICY` defaults to "require" since 2026-07-28 (config/env.ts) —
+        // so in a STANDARD deployment `env.pqEnabled` is true and this check
+        // trivially passes via the `env.pqEnabled ||` short-circuit: its real
+        // assertion (a plain v2 bundle carries NO PQ field at all) is only
+        // exercised when an operator has explicitly opted OUT with
+        // `PQ_POLICY=off` (dev/demo only — see .env.example). Kept as its own
+        // `check()` either way so the running total below stays meaningful
+        // (it always contributes one line to "N vérifications"): a half-hybrid
+        // bundle — PQ fields present on something the front doesn't badge, or
+        // absent from something it does — is exactly the shape a forger would
+        // exploit, so this stays asserted whichever policy is active.
+        check(
+          "PQ_POLICY=off (opt-out explicite) : bundle v2 sans aucun champ PQ (signaturePq/publicKeyPq/certificatePq)",
+          env.pqEnabled ||
+            (tpBundle?.engine === "ed25519-sd-v2" &&
+              !tpBundle.signaturePq &&
+              !tpBundle.school.publicKeyPq &&
+              !tpBundle.school.certificatePq &&
+              !tpBundle.root.publicKeyPq),
+          tpBundle
+            ? JSON.stringify({ engine: tpBundle.engine, hasPq: Boolean(tpBundle.signaturePq) })
+            : "bundle absent",
+        );
+
+        // Exercised whenever `PQ_POLICY` != "off" — i.e. on EVERY standard
+        // Gate C run now that "require" is the default (only skipped if an
+        // operator explicitly set `PQ_POLICY=off`). When it runs, the bundle
+        // must be hybrid "AND": BOTH signatures present, and
+        // `verifyProofBundle` (the SAME function the recruiter's browser
+        // runs) must validate BOTH locally — never "OR". These 2 checks used
+        // to be the rare/conditional branch when the default was "off"; they
+        // are now the common case, which is WHY the total check count moved
+        // from 64 to 66 (see CLAUDE.md §6).
+        if (env.pqEnabled) {
+          const tpLocalOutcome = tpBundle ? await verifyProofBundle(tpBundle, TRUSTED_ROOTS) : null;
+          check(
+            "PQ_POLICY≠off : bundle v3 (ed25519-sd-v3) porte signaturePq + certificats PQ école/racine",
+            tpBundle?.engine === "ed25519-sd-v3" &&
+              Boolean(tpBundle.signaturePq) &&
+              Boolean(tpBundle.school.publicKeyPq) &&
+              Boolean(tpBundle.school.certificatePq) &&
+              Boolean(tpBundle.root.publicKeyPq),
+            tpBundle ? JSON.stringify({ engine: tpBundle.engine }) : "bundle absent",
+          );
+          check(
+            "PQ_POLICY≠off : verifyProofBundle valide LOCALEMENT les DEUX signatures (hybride ET, jamais OU)",
+            tpLocalOutcome !== null && tpLocalOutcome.ok === true,
+            tpLocalOutcome ? JSON.stringify(tpLocalOutcome).slice(0, 160) : "bundle absent",
+          );
+        }
+
         const eudiProbe = await runEudiFlow(studentBrowser, issuedId);
 
         const revokeDiploma = await schoolBrowser.req(`/diplomas/${issuedId}/revoke`, {
@@ -1061,7 +1178,7 @@ async function main(): Promise<void> {
             proofBundle?: ProofBundleDTO | null;
           } | null;
           const revokedBundle = revokedBody?.proofBundle ?? null;
-          const revokedLocal = revokedBundle ? await verifyProofBundle(revokedBundle) : null;
+          const revokedLocal = revokedBundle ? await verifyProofBundle(revokedBundle, TRUSTED_ROOTS) : null;
           check(
             "V1 SD : après révocation, bundle crypto valide mais revocation.status=revoked",
             revokedBody?.result === "revoked" &&

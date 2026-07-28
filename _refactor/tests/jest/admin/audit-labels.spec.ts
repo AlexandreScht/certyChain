@@ -41,6 +41,8 @@ const AUDIT_TYPE_ENUM = [
   "vc_credential_issued",
   "transparency_report",
   "school_unfrozen",
+  "pq_degraded",
+  "refresh_reuse_detected",
 ] as const;
 
 describe("AUDIT_LABELS (régression A2)", () => {

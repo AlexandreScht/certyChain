@@ -1,0 +1,45 @@
+# Fins de ligne — normalisation du dépôt (CertifyChain)
+#
+# Sans ce fichier, un checkout Windows avec `core.autocrlf=true` réécrit en CRLF
+# des fichiers que le dépôt stocke en LF. Conséquences observées / évitables :
+#
+#  1. `apps/server/test/modules/accrochage/fixtures/*.xml` — le builder XML CDC
+#     émet du LF et le test golden compare OCTET PAR OCTET (déterminisme voulu,
+#     conformité XSD 1.1.5). Une fixture en CRLF rend ce gate rouge en
+#     permanence sur Windows, ce qui masque la prochaine vraie régression. Le
+#     test ne doit JAMAIS être assoupli : c'est le checkout qu'on corrige ici.
+#  2. `apps/server/drizzle/*.sql` — drizzle hache le CONTENU de chaque migration
+#     et stocke ce hash dans `__drizzle_migrations` (l'application, elle, se
+#     décide sur `_journal.json:when` — le hash n'est donc pas un risque de
+#     re-rejeu, mais il perd toute valeur de traçabilité s'il dépend de la
+#     machine qui a lancé `db:migrate`).
+#  3. Tout script exécuté dans les images distroless/Linux : un `\r` en fin de
+#     shebang casse l'exécution.
+#
+# Le dépôt est intégralement en LF dans l'index (`git ls-files --eol`) et se
+# construit dans des conteneurs Linux : LF est la seule forme canonique.
+# `text=auto` laisse la détection binaire de git faire son travail (ico, pdf,
+# zip, polices) — seuls les fichiers détectés comme texte sont normalisés.
+
+* text=auto eol=lf
+
+# ── Byte-exact / hash-sensible : explicite, jamais soumis à l'auto-détection ──
+*.sql        text eol=lf
+*.sh         text eol=lf
+apps/server/test/**/fixtures/**  text eol=lf
+
+# ── Binaires : aucune conversion, jamais de diff texte ───────────────────────
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.avif  binary
+*.woff  binary
+*.woff2 binary
+
+# ── Lockfile : LF, et pas de diff bruyant dans les revues ────────────────────
+pnpm-lock.yaml  text eol=lf linguist-generated=true -diff

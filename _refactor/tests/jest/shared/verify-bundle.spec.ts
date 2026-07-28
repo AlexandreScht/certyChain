@@ -15,7 +15,7 @@ import {
   webcrypto,
 } from "node:crypto";
 import type { ProofBundleDTO } from "@certifychain/contract/dto";
-import { verifyProofBundle } from "@certifychain/shared/crypto/verify-bundle";
+import { verifyProofBundle, type TrustedRoots } from "@certifychain/shared/crypto/verify-bundle";
 
 /* ── Mini-outillage fixture (miroir exact des primitives serveur) ─────────── */
 
@@ -127,12 +127,22 @@ function buildFixture(disclosed: string[]): Fixture {
   return { bundle, disclosureByField };
 }
 
+/**
+ * Root pinning (audit 2026-07-27): `buildFixture` mints a FRESH root key pair
+ * on every call, so the trust anchor for a given test is whatever root that
+ * SAME fixture actually signed with — never the bundle's own field trusted
+ * blindly. `otherTrustedRoots` builds the "wrong pin" case explicitly.
+ */
+function rootsOf(bundle: ProofBundleDTO): TrustedRoots {
+  return { ed25519: [bundle.root.publicKey], mlDsa65: [] };
+}
+
 /* ── Chemin par défaut (jsdom : pas de subtle.Ed25519 → @noble) ───────────── */
 
 describe("verifyProofBundle en jsdom (preuve navigateur)", () => {
   it("accepte un bundle authentique et rend disclosed + hidden", async () => {
     const { bundle } = buildFixture(["holderName", "programTitle"]);
-    const outcome = await verifyProofBundle(bundle);
+    const outcome = await verifyProofBundle(bundle, rootsOf(bundle));
     expect(outcome).toEqual({
       ok: true,
       disclosed: { holderName: "Alex Dubois", programTitle: "Master Data Science" },
@@ -142,7 +152,7 @@ describe("verifyProofBundle en jsdom (preuve navigateur)", () => {
 
   it("préserve une valeur null divulguée (externalId)", async () => {
     const { bundle } = buildFixture(["externalId"]);
-    const outcome = await verifyProofBundle(bundle);
+    const outcome = await verifyProofBundle(bundle, rootsOf(bundle));
     expect(outcome.ok).toBe(true);
     if (outcome.ok) expect(outcome.disclosed).toEqual({ externalId: null });
   });
@@ -152,7 +162,7 @@ describe("verifyProofBundle en jsdom (preuve navigateur)", () => {
     bundle.disclosures = [
       makeDisclosure("holderName", "Eve", Buffer.alloc(16, 9).toString("base64url")),
     ];
-    const outcome = await verifyProofBundle(bundle);
+    const outcome = await verifyProofBundle(bundle, rootsOf(bundle));
     expect(outcome.ok).toBe(false);
   });
 
@@ -163,14 +173,14 @@ describe("verifyProofBundle en jsdom (preuve navigateur)", () => {
       privateKeyEncoding: { type: "pkcs8", format: "pem" },
     });
     bundle.signature = signHashHex(foreign.privateKey, sha256HexOfCanonical(bundle.payload));
-    const outcome = await verifyProofBundle(bundle);
+    const outcome = await verifyProofBundle(bundle, rootsOf(bundle));
     expect(outcome.ok).toBe(false);
   });
 
   it("rejette schoolId ≠ school.id et un certificat qui ne chaîne pas", async () => {
     const a = buildFixture([]);
     a.bundle.payload = { ...a.bundle.payload, schoolId: "99999999-9999-4999-8999-999999999999" };
-    expect((await verifyProofBundle(a.bundle)).ok).toBe(false);
+    expect((await verifyProofBundle(a.bundle, rootsOf(a.bundle))).ok).toBe(false);
 
     const b = buildFixture([]);
     const otherRoot = generateKeyPairSync("ed25519", {
@@ -178,13 +188,16 @@ describe("verifyProofBundle en jsdom (preuve navigateur)", () => {
       privateKeyEncoding: { type: "pkcs8", format: "pem" },
     });
     b.bundle.root = { publicKey: otherRoot.publicKey };
-    expect((await verifyProofBundle(b.bundle)).ok).toBe(false);
+    // Trust the (now tampered) declared root itself, so this stays a test of
+    // "certificate doesn't chain to the DECLARED root", not of root pinning
+    // (that bypass has its own dedicated suite, verify-bundle-root-pinning.spec.ts).
+    expect((await verifyProofBundle(b.bundle, rootsOf(b.bundle))).ok).toBe(false);
   });
 
   it("rejette une version de payload inconnue", async () => {
     const { bundle } = buildFixture([]);
     bundle.payload = { ...bundle.payload, v: "sd-v3" as "sd-v2" };
-    expect((await verifyProofBundle(bundle)).ok).toBe(false);
+    expect((await verifyProofBundle(bundle, rootsOf(bundle))).ok).toBe(false);
   });
 });
 
@@ -193,14 +206,14 @@ describe("verifyProofBundle en jsdom (preuve navigateur)", () => {
 describe("fallback @noble forcé (forceNoble)", () => {
   it("vérifie le même bundle sans WebCrypto", async () => {
     const { bundle } = buildFixture(["mention"]);
-    const outcome = await verifyProofBundle(bundle, { forceNoble: true });
+    const outcome = await verifyProofBundle(bundle, rootsOf(bundle), { forceNoble: true });
     expect(outcome).toEqual({ ok: true, disclosed: { mention: "Très Bien" }, hidden: 6 });
   });
 
   it("rejette pareil en fallback (pas de divergence de chemin)", async () => {
     const { bundle } = buildFixture(["mention"]);
     bundle.signature = bundle.signature.slice(0, -4) + "AAAA";
-    const outcome = await verifyProofBundle(bundle, { forceNoble: true });
+    const outcome = await verifyProofBundle(bundle, rootsOf(bundle), { forceNoble: true });
     expect(outcome.ok).toBe(false);
   });
 });
@@ -220,8 +233,8 @@ describe("chemin WebCrypto (crypto.subtle Ed25519)", () => {
 
   it("vérifie via subtle et rend le même verdict que @noble", async () => {
     const { bundle } = buildFixture(["holderName", "rncp"]);
-    const viaSubtle = await verifyProofBundle(bundle);
-    const viaNoble = await verifyProofBundle(bundle, { forceNoble: true });
+    const viaSubtle = await verifyProofBundle(bundle, rootsOf(bundle));
+    const viaNoble = await verifyProofBundle(bundle, rootsOf(bundle), { forceNoble: true });
     expect(viaSubtle).toEqual({
       ok: true,
       disclosed: { holderName: "Alex Dubois", rncp: "RNCP34031" },

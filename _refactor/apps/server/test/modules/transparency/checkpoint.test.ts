@@ -59,6 +59,7 @@ function makeFakeStore(initialLeaves: string[] = [], insertDelayMs = 0): FakeSto
         treeSize: v.treeSize,
         rootHash: v.rootHash,
         signature: v.signature,
+        signaturePq: v.signaturePq,
         otsProof: null,
         otsUpgradedAt: null,
         createdAt: v.createdAt,
@@ -219,6 +220,7 @@ describe("checkpoint.service — sans DB (seams injectées)", () => {
       treeSize: 1,
       rootHash: "cd".repeat(32),
       signature: "sig",
+      signaturePq: null,
       createdAt: at,
     });
     await svc.runOtsMaintenance();

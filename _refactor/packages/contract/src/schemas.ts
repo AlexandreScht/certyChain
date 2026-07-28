@@ -143,6 +143,15 @@ export const CreateShareLinkSchema = z.object({
     .optional(),
 });
 
+/** Pagination for `GET /wallet/diplomas/:id/shares` (R4, audit 2026-07-28) —
+ *  same page/pageSize convention as the admin lists (`ListDiplomasQuerySchema`
+ *  et al.), so a student with many accumulated share links doesn't load them
+ *  all at once. */
+export const ListShareLinksQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 /* ── Public verification ────────────────────────────────────────────────── */
 
 export const VerifyProofSchema = z.object({
@@ -220,6 +229,7 @@ export type CdcCrtUploadInput = z.infer<typeof CdcCrtUploadSchema>;
 export type ListCdcExportsQuery = z.infer<typeof ListCdcExportsQuerySchema>;
 export type SetCdcModuleEnabledInput = z.infer<typeof SetCdcModuleEnabledSchema>;
 export type CreateShareLinkInput = z.infer<typeof CreateShareLinkSchema>;
+export type ListShareLinksQuery = z.infer<typeof ListShareLinksQuerySchema>;
 export type VerifyProofInput = z.infer<typeof VerifyProofSchema>;
 export type LogConsistencyQuery = z.infer<typeof LogConsistencyQuerySchema>;
 export type ListJournalQuery = z.infer<typeof ListJournalQuerySchema>;

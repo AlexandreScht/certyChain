@@ -44,7 +44,7 @@ import type {
 } from "@certifychain/contract/enums";
 
 import { FadeIn } from "@/components/school";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import {
   cancelCdcExport,
   createCdcExport,
@@ -125,10 +125,11 @@ function triggerBlobDownload(blob: Blob, fileName: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), OBJECT_URL_REVOKE_DELAY_MS);
 }
 
+/** Thin wrapper: keeps the local call sites unchanged while gaining the
+ *  shared 429 "Retry-After" wording (audit R6) instead of the raw generic
+ *  fallback this file used to hardcode. */
 function errorMessage(error: unknown): string {
-  return error instanceof ApiClientError
-    ? error.message
-    : "Une erreur inattendue est survenue. Réessayez dans quelques instants.";
+  return apiErrorMessage(error);
 }
 
 function escapeCsv(value: string): string {

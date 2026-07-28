@@ -1,5 +1,7 @@
+import { OUTBOUND_RATE_LIMIT } from "../config/constants";
 import { env } from "../config/env";
 import { logger } from "./logger";
+import { createTokenBucket } from "./token-bucket";
 
 /**
  * INSEE Sirene API client (authoritative French business/establishment registry).
@@ -9,7 +11,14 @@ import { logger } from "./logger";
  * Configurable (base URL + auth header) so it survives INSEE portal changes.
  * Returns `null` when the check could not be performed (no key / network / error)
  * so the caller degrades to the AI plausibility check or manual review.
+ *
+ * A module-scoped token bucket (`config/constants.ts#OUTBOUND_RATE_LIMIT.INSEE`)
+ * caps our OUTBOUND call rate to SIRENE — protecting our own API quota with
+ * INSEE, never the inbound request: an exhausted bucket degrades EXACTLY like
+ * a missing `INSEE_API_KEY` (`lookupSiret` returns `null`, the caller falls
+ * back to the AI plausibility check), never a thrown error.
  */
+const inseeBucket = createTokenBucket(OUTBOUND_RATE_LIMIT.INSEE);
 
 /** Structured postal address of an establishment (verify.md postal proof). */
 export interface SireneAddress {
@@ -83,6 +92,13 @@ function extractLegalName(ul: Record<string, unknown> | undefined): string | nul
  */
 export async function lookupSiret(siret: string): Promise<SireneLookup | null> {
   if (!env.INSEE_API_KEY || !isValidSiret(siret)) return null;
+  if (!inseeBucket.tryConsume()) {
+    // Never fail the caller's request over OUR outbound quota — degrade
+    // exactly like "no key configured" (falls back to the AI plausibility
+    // check / manual review).
+    logger.warn("insee.outbound_rate_limited", { siret });
+    return null;
+  }
 
   const url = `${env.INSEE_API_BASE.replace(/\/$/, "")}/siret/${siret}`;
   const controller = new AbortController();

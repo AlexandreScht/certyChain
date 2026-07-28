@@ -31,7 +31,7 @@ import {
   revalidateSchool,
   setSchoolCdcEnabled,
 } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { Button, Card, Stat, Skeleton, Modal, Field, Textarea, useToast } from "@certifychain/shared/ui";
 import { FadeIn, ScoreGauge, SchoolStatusBadge } from "@/components/admin";
 import { cn } from "@certifychain/shared/lib/cn";
@@ -87,7 +87,7 @@ export default function AdminSchoolDetailPage() {
     try {
       setSchool(await getAdminSchool(id));
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Chargement impossible", err.message);
+      toastError("Chargement impossible", apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -107,7 +107,7 @@ export default function AdminSchoolDetailPage() {
         "L'établissement passe en vérification de propriété : il doit prouver qu'il le contrôle (DNS, courrier ou ProConnect) avant d'émettre. Les clés PKI ne sont générées qu'à ce moment.",
       );
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Validation impossible", err.message);
+      toastError("Validation impossible", apiErrorMessage(err));
     } finally {
       setActing(false);
     }
@@ -120,7 +120,9 @@ export default function AdminSchoolDetailPage() {
       setSchool(await revalidateSchool(id));
       success("Réévaluation terminée", "Le score IA a été recalculé.");
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Réévaluation impossible", err.message);
+      // This action is rate-limited server-side (`ADMIN_REVALIDATE_IP`) — a
+      // 429 now names its concrete delay instead of a generic message (R6).
+      toastError("Réévaluation impossible", apiErrorMessage(err));
     } finally {
       setActing(false);
     }
@@ -136,7 +138,7 @@ export default function AdminSchoolDetailPage() {
       setModal(null);
       setReason("");
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Action impossible", err.message);
+      toastError("Action impossible", apiErrorMessage(err));
     } finally {
       setActing(false);
     }
@@ -150,7 +152,7 @@ export default function AdminSchoolDetailPage() {
       setUnfreezeOpen(false);
       success("Émissions dégelées", "L'établissement peut de nouveau émettre des diplômes.");
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Dégel impossible", err.message);
+      toastError("Dégel impossible", apiErrorMessage(err));
     } finally {
       setActing(false);
     }
@@ -169,7 +171,7 @@ export default function AdminSchoolDetailPage() {
           : "La création de lots est bloquée et les identités CDC encore chiffrées ont été purgées.",
       );
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Modification impossible", err.message);
+      toastError("Modification impossible", apiErrorMessage(err));
     } finally {
       setActing(false);
     }

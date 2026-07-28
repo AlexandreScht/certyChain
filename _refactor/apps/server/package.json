@@ -22,6 +22,7 @@
     "db:seed": "tsx --env-file=../../.env src/scripts/seed.ts",
     "seed:admin": "tsx --env-file=../../.env src/scripts/seed-admin.ts",
     "keys:root": "tsx src/scripts/gen-root-keys.ts",
+    "keys:root:pq": "tsx src/scripts/gen-root-keys-pq.ts",
     "keys:vc": "tsx --env-file=../../.env src/scripts/gen-vc-issuer-key.ts"
   },
   "dependencies": {

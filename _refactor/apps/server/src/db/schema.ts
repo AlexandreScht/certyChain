@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -118,6 +119,20 @@ export const auditTypeEnum = pgEnum("audit_type", [
   "vc_credential_issued",
   "transparency_report",
   "school_unfrozen",
+  /**
+   * V4 (v2.md §V4-0/§V4-1): under `PQ_POLICY=dual-sign`, this diploma was
+   * emitted WITHOUT its post-quantum signature because minting or signing
+   * failed. Irreversible — a diploma cannot be re-signed later — so the
+   * degradation is journaled durably, not merely logged.
+   */
+  "pq_degraded",
+  /**
+   * P3 (PLAN.md): a refresh token that had ALREADY been rotated once (revoked
+   * AND carrying a non-null `replaced_by_id`) was presented again — the
+   * strongest signal available for a stolen/replayed refresh cookie. The
+   * whole session family was revoked in response (auth.routes.ts).
+   */
+  "refresh_reuse_detected",
 ]);
 
 export const verificationResultEnum = pgEnum("verification_result", [
@@ -160,6 +175,19 @@ export const schools = pgTable("schools", {
   signerRef: text("signer_ref"),
   /** Root-signed certificate (base64) binding {schoolId, publicKey} to CertifyChain root. */
   certificate: text("certificate"),
+  /** Base64 raw ML-DSA-65 (FIPS 204) public key of the school (v2.md §V4-1) —
+      hybrid post-quantum signing. Null until lazily provisioned at the first
+      emission under PQ_POLICY != 'off'. */
+  publicKeyPq: text("public_key_pq"),
+  /** Opaque reference to the school's ML-DSA-65 SECRET key, resolved the same
+      way as `signerRef` — but ALWAYS through the envelope backend (quasi no
+      managed KMS signs ML-DSA today, v2.md §V4-2): unlike `signerKind`, there
+      is no 'kms' variant of this column. */
+  signerRefPq: text("signer_ref_pq"),
+  /** Root-signed ML-DSA-65 certificate (base64) binding {schoolId,
+      publicKey: publicKeyPq, name, issuedAt} to the CertifyChain root's PQ
+      key — same canonical shape as `certificate`, different key material. */
+  certificatePq: text("certificate_pq"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   /* ── AI-assisted validation + admin review (CertifyChain admin portal) ──── */
@@ -348,13 +376,19 @@ export const diplomas = pgTable("diplomas", {
   payloadHash: text("payload_hash").notNull(),
   /** Base64 Ed25519 signature of payloadHash by the school's private key. */
   signature: text("signature").notNull(),
+  /** Base64 ML-DSA-65 signature of the SAME payloadHash, by the school's PQ
+      key (v2.md §V4-1) — present only for proof_version='v3' (hybrid
+      post-quantum, v2 + PQ). Both `signature` AND `signaturePq` must verify:
+      hybrid "AND", never "OR" (packages/shared/crypto/verify-bundle.ts). */
+  signaturePq: text("signature_pq"),
   /** Random per-diploma holder secret, envelope-encrypted. Binds the nonce proof. */
   encryptedHolderSecret: text("encrypted_holder_secret").notNull(),
   /** Proof engine version resolved PER diploma: 'v1' = ed25519-nonce-v1 (legacy,
-      monolithic hash), 'v2' = ed25519-sd-v2 (salted per-field disclosures, RFC 9901).
-      Existing diplomas stay 'v1' and keep verifying — never re-signed retroactively. */
+      monolithic hash), 'v2' = ed25519-sd-v2 (salted per-field disclosures, RFC 9901),
+      'v3' = ed25519-sd-v2 + ML-DSA-65 hybrid (v2.md §V4-1). Existing diplomas
+      stay 'v1'/'v2' and keep verifying — never re-signed retroactively. */
   proofVersion: text("proof_version").notNull().default("v1"),
-  /** v2 only: keyVault.encrypt(JSON) of the field→disclosure dict (all 7 fields,
+  /** v2/v3 only: keyVault.encrypt(JSON) of the field→disclosure dict (all 7 fields,
       salts kept secret at rest so undisclosed low-entropy fields can't be brute-forced). */
   disclosuresEncrypted: text("disclosures_encrypted"),
   status: diplomaStatusEnum("status").notNull().default("active"),
@@ -366,6 +400,17 @@ export const diplomas = pgTable("diplomas", {
   v2NeedsDisclosures: check(
     "diplomas_v2_needs_disclosures",
     sql`${t.proofVersion} <> 'v2' OR ${t.disclosuresEncrypted} IS NOT NULL`,
+  ),
+  // v3 = v2 + PQ (v2.md §V4-1): a v3 diploma MUST carry its disclosures too.
+  v3NeedsDisclosures: check(
+    "diplomas_v3_needs_disclosures",
+    sql`${t.proofVersion} <> 'v3' OR ${t.disclosuresEncrypted} IS NOT NULL`,
+  ),
+  // v3 MUST carry its post-quantum signature — never emit/store a "v3" row
+  // that is secretly Ed25519-only.
+  v3NeedsSignaturePq: check(
+    "diplomas_v3_needs_signature_pq",
+    sql`${t.proofVersion} <> 'v3' OR ${t.signaturePq} IS NOT NULL`,
   ),
 }));
 
@@ -603,27 +648,39 @@ export const vcCredentials = pgTable(
   }),
 );
 
-export const shareLinks = pgTable("share_links", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  diplomaId: uuid("diploma_id")
-    .notNull()
-    .references(() => diplomas.id, { onDelete: "cascade" }),
-  /** URL-safe random token embedded in the public verification link. */
-  token: text("token").notNull().unique(),
-  createdByStudentId: uuid("created_by_student_id").references(() => students.id, {
-    onDelete: "set null",
+export const shareLinks = pgTable(
+  "share_links",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    diplomaId: uuid("diploma_id")
+      .notNull()
+      .references(() => diplomas.id, { onDelete: "cascade" }),
+    /** URL-safe random token embedded in the public verification link. */
+    token: text("token").notNull().unique(),
+    createdByStudentId: uuid("created_by_student_id").references(() => students.id, {
+      onDelete: "set null",
+    }),
+    /** Fields the holder agreed to reveal to THIS recruiter (chosen at link creation).
+        Default reproduces the historical fixed disclosure of verify.routes.ts. Only
+        meaningful for v2 diplomas; ignored for legacy v1. */
+    disclosedFields: text("disclosed_fields")
+      .array()
+      .notNull()
+      .default(["holderName", "programTitle", "mention", "rncp", "issuedAt"]),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revoked: boolean("revoked").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // Pagination (R4, audit 2026-07-28): `GET /wallet/diplomas/:id/shares` filters
+    // on `diploma_id` and orders by `created_at` — without this, the ORDER BY forces
+    // a full-table sort once a diploma accumulates many links.
+    diplomaIdCreatedAtIdx: index("share_links_diploma_id_created_at_idx").on(
+      t.diplomaId,
+      t.createdAt,
+    ),
   }),
-  /** Fields the holder agreed to reveal to THIS recruiter (chosen at link creation).
-      Default reproduces the historical fixed disclosure of verify.routes.ts. Only
-      meaningful for v2 diplomas; ignored for legacy v1. */
-  disclosedFields: text("disclosed_fields")
-    .array()
-    .notNull()
-    .default(["holderName", "programTitle", "mention", "rncp", "issuedAt"]),
-  expiresAt: timestamp("expires_at", { withTimezone: true }),
-  revoked: boolean("revoked").notNull().default(false),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+);
 
 export const verificationNonces = pgTable("verification_nonces", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -646,17 +703,36 @@ export const otpCodes = pgTable("otp_codes", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const refreshSessions = pgTable("refresh_sessions", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  subjectType: subjectTypeEnum("subject_type").notNull(),
-  subjectId: uuid("subject_id").notNull(),
-  /** SHA-256 of the refresh token (token itself never stored). */
-  tokenHash: text("token_hash").notNull().unique(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  revokedAt: timestamp("revoked_at", { withTimezone: true }),
-  userAgent: text("user_agent"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const refreshSessions = pgTable(
+  "refresh_sessions",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    subjectType: subjectTypeEnum("subject_type").notNull(),
+    subjectId: uuid("subject_id").notNull(),
+    /** SHA-256 of the refresh token (token itself never stored). */
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    /**
+     * P3 (PLAN.md) rotation family: shared by a session and every session it
+     * is ever rotated into — by convention equal to the ROOT session's own
+     * `id` (the one minted at login). Revoking a family = revoking every row
+     * that shares this value.
+     */
+    familyId: uuid("family_id").notNull(),
+    /**
+     * Set when this exact session is rotated (refresh): points at the session
+     * that replaced it. `revokedAt` set + `replacedById` NON-NULL is the
+     * theft signal (this token was already consumed once and is being
+     * replayed) — distinct from a plain revoke (logout, school
+     * rejected/revoked), which leaves `replacedById` null and is NOT theft.
+     */
+    replacedById: uuid("replaced_by_id").references((): AnyPgColumn => refreshSessions.id),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ familyIdIdx: index("refresh_sessions_family_id_idx").on(t.familyId) }),
+);
 
 /**
  * A school's ownership-verification attempts (verify.md). The current attempt is
@@ -744,6 +820,11 @@ export const logCheckpoints = pgTable("log_checkpoints", {
   treeSize: bigint("tree_size", { mode: "number" }).notNull(),
   rootHash: text("root_hash").notNull(),
   signature: text("signature").notNull(),
+  /** Base64 ML-DSA-65 signature of the SAME {treeSize, rootHash, timestamp}
+      message (v2.md §V4-1) — present only once PQ_POLICY is enabled
+      server-side. Null for checkpoints signed before that (non-regression:
+      they keep verifying Ed25519-only, forever). */
+  signaturePq: text("signature_pq"),
   otsProof: bytea("ots_proof"),
   otsUpgradedAt: timestamp("ots_upgraded_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

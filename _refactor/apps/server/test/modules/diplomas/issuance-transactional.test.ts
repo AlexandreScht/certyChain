@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import type { CreateDiplomaInput } from "@certifychain/contract/schemas";
+import { env } from "../../../src/config/env";
 import { keyVault } from "../../../src/crypto/envelope";
 import { generateEd25519KeyPair } from "../../../src/crypto/keys";
 import type { DB } from "../../../src/db/client";
@@ -44,11 +45,22 @@ function makeSchool(): Record<string, unknown> {
     id: SCHOOL_ID,
     name: "École Tx Test",
     status: "approved",
+    // `approvedAt` est OBLIGATOIRE sur toute école approuvée (les deux chemins
+    // d'`approveSchool` l'écrivent) : `ensureSchoolPqMaterial` y date le
+    // certificat PQ et échoue fermé sans lui. L'omettre rendait ce test
+    // dépendant de `PQ_POLICY=off` — sous le défaut `require`, l'émission
+    // mourait AVANT la transaction et n'exerçait plus rien du journal.
+    approvedAt: new Date("2026-07-01T00:00:00.000Z"),
     publicKey,
     encryptedPrivateKey: keyVault.encrypt(privateKey),
     signerKind: "envelope",
     signerRef: null,
     issuanceFrozenAt: null,
+    // Pas encore de matériel PQ : le provisionnement paresseux s'exécute
+    // (cf. le `update` du faux db) sous `dual-sign` comme sous `require`.
+    publicKeyPq: null,
+    certificatePq: null,
+    signerRefPq: null,
   };
 }
 
@@ -56,6 +68,7 @@ describe("issueDiploma — transactionnalité du journal (sans DB)", () => {
   it("rolls the diploma back when the issuance_log insert fails (same transaction)", async () => {
     const school = makeSchool();
     const calls: string[] = [];
+    let pqMinted = false;
 
     /** Thenable node that resolves an array based on which table `.from()` saw. */
     function selectNode(): Record<string, unknown> {
@@ -112,6 +125,19 @@ describe("issueDiploma — transactionnalité du journal (sans DB)", () => {
       select: () => ({
         from: () => ({ where: () => ({ limit: () => ({ then: (r: (v: unknown) => void) => r([school]) }) }) }),
       }),
+      // Frappe le compare-and-swap d'`ensureSchoolPqMaterial` (mint PQ paresseux,
+      // HORS transaction) : un seul écrivain ici, il gagne toujours. Sans lui le
+      // test ne passerait que sous `PQ_POLICY=off`.
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: () => {
+              pqMinted = true;
+              return Promise.resolve([{ id: SCHOOL_ID }]);
+            },
+          }),
+        }),
+      }),
       transaction: (cb: (tx: unknown) => Promise<unknown>) => cb(fakeTx),
     };
 
@@ -130,5 +156,10 @@ describe("issueDiploma — transactionnalité du journal (sans DB)", () => {
     );
     // The retry-on-unique-violation path is NOT taken (the failure is not 23505).
     assert.equal(calls.filter((c) => c === "insert:diplomas").length, 1);
+    // Garde-fou : sous une politique PQ active, l'émission a réellement traversé
+    // le provisionnement paresseux avant d'entrer en transaction. Sans ceci, une
+    // fixture d'école incomplète pourrait de nouveau court-circuiter le chemin
+    // `require` au lieu de l'exercer — c'était exactement le défaut d'origine.
+    assert.equal(pqMinted, env.PQ_POLICY !== "off", "le mint PQ paresseux a bien eu lieu");
   });
 });

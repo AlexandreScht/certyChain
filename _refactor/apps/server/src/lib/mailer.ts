@@ -42,6 +42,7 @@ export async function sendMail(mail: Mail): Promise<void> {
         user: env.SMTP_USER || undefined,
         password: env.SMTP_PASSWORD || undefined,
         secure: env.SMTP_SECURE,
+        starttls: env.SMTP_STARTTLS,
         from: env.SMTP_FROM,
       },
       mail,

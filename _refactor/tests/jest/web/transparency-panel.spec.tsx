@@ -108,7 +108,9 @@ describe("TransparencyPanel", () => {
     expect(await screen.findByText(/en attente de confirmation/)).toBeInTheDocument();
     expect(screen.queryByText(/confirmé le/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Liaison partielle/)).not.toBeInTheDocument();
-    expect(verifyTransparencyMock).toHaveBeenCalledWith(bundle);
+    // Second arg = the pinned trust anchor (`TRUSTED_ROOTS`, `@/lib/trusted-roots`)
+    // — root pinning fix (audit 2026-07-27); its content is covered elsewhere.
+    expect(verifyTransparencyMock).toHaveBeenCalledWith(bundle, expect.anything());
   });
 
   it("affiche « confirmé le » quand otsUpgradedAt est renseigné", async () => {

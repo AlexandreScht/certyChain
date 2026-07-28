@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { listAdminAudit } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { Button, Card, Select, Table, PageHeader, useToast, type TableColumn } from "@certifychain/shared/ui";
 import { FadeIn } from "@/components/admin";
 import { AUDIT_LABELS } from "@/lib/audit-labels";
@@ -43,7 +43,7 @@ export default function AdminAuditPage() {
     try {
       setData(await listAdminAudit({ type: type || undefined, page }));
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Chargement impossible", err.message);
+      toastError("Chargement impossible", apiErrorMessage(err));
     } finally {
       setLoading(false);
     }

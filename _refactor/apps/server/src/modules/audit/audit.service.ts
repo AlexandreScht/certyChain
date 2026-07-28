@@ -1,6 +1,6 @@
 import { and, count, desc, eq } from "drizzle-orm";
 import type { VerificationResult } from "@certifychain/contract/enums";
-import { db } from "../../db/client";
+import { db, type DB } from "../../db/client";
 import { type AuditEntry, auditLog } from "../../db/schema";
 import { logger } from "../../lib/logger";
 
@@ -17,10 +17,20 @@ export interface AuditInput {
   metadata?: Record<string, unknown>;
 }
 
-/** Append an audit entry. Never throws into the caller's flow. */
-export async function recordAudit(input: AuditInput): Promise<void> {
+/**
+ * Append an audit entry. Never throws into the caller's flow.
+ *
+ * `deps.db` is an injection seam, defaulting to the production `db`: it lets a
+ * caller that already runs against an injected database (e.g. `issueDiploma`,
+ * whose PQ-degradation entry MUST be observable in tests) write through the
+ * same handle instead of the module-level singleton.
+ */
+export async function recordAudit(
+  input: AuditInput,
+  deps: { db: DB } = { db },
+): Promise<void> {
   try {
-    await db.insert(auditLog).values({
+    await deps.db.insert(auditLog).values({
       type: input.type,
       result: input.result ?? null,
       schoolId: input.schoolId ?? null,

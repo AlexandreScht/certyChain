@@ -55,11 +55,14 @@ function ipNetworkPrefix(ip: string): string {
 /**
  * Salted hash of the IP *network prefix* — RGPD: audit logs store no raw IP and
  * truncation provides k-anonymity within the subnet. This is pseudonymization,
- * not irreversible anonymization.
+ * not irreversible anonymization. Salt is `AUDIT_IP_SALT` (P5/PLAN.md) —
+ * required, dedicated, never shared with OTP_PEPPER.
  */
 export function anonymizeIp(ip: string): string {
-  const salt = env.AUDIT_IP_SALT ?? env.OTP_PEPPER;
-  return createHash("sha256").update(`${ipNetworkPrefix(ip)}|${salt}`).digest("hex").slice(0, 32);
+  return createHash("sha256")
+    .update(`${ipNetworkPrefix(ip)}|${env.AUDIT_IP_SALT}`)
+    .digest("hex")
+    .slice(0, 32);
 }
 
 /** Truncated User-Agent for audit (avoid storing huge / fingerprinting strings). */

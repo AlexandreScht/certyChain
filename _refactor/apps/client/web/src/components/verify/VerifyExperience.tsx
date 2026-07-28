@@ -6,7 +6,8 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, Lock, ShieldCheck, Sparkles } from "lucide-react";
 import { Button, ToastProvider, useToast } from "@certifychain/shared/ui";
 import ThemeToggle from "@certifychain/shared/ui/ThemeToggle";
-import { ApiClientError, verifyChallenge, verifyProof } from "@/lib/api";
+import { apiErrorMessage, verifyChallenge, verifyProof } from "@/lib/api";
+import { TRUSTED_ROOTS } from "@/lib/trusted-roots";
 import type { VerificationResultDTO } from "@certifychain/contract/dto";
 import {
   verifyProofBundle,
@@ -60,17 +61,17 @@ function VerifyExperienceInner({ token }: VerifyExperienceProps): JSX.Element {
       // v2: re-run the FULL crypto verification locally, in the browser. The
       // displayed verdict is this outcome — never the server's word alone.
       const outcome = verdict.proofBundle
-        ? await verifyProofBundle(verdict.proofBundle)
+        ? await verifyProofBundle(verdict.proofBundle, TRUSTED_ROOTS)
         : null;
       setResult(verdict);
       setClientOutcome(outcome);
       setPhase("result");
     } catch (err) {
-      const message =
-        err instanceof ApiClientError
-          ? err.message
-          : "Une erreur inattendue est survenue.";
-      toastError("Vérification impossible", message);
+      // Rate-limited surface: `/verify/*` is IP-throttled (RATE_LIMIT.VERIFY_IP),
+      // so a burst of retries genuinely can 429 here — `apiErrorMessage` turns
+      // that into "Trop de requêtes. Réessayez dans Xs." instead of the flat
+      // generic fallback this used to show regardless of the reason (audit R6).
+      toastError("Vérification impossible", apiErrorMessage(err));
       setPhase("error");
     } finally {
       inFlight.current = false;
@@ -212,11 +213,18 @@ function VerifyExperienceInner({ token }: VerifyExperienceProps): JSX.Element {
  *
  * v2 (`proofBundle` present): the verdict is DRIVEN BY THE CLIENT outcome. We
  * show "Vérifié" only when the browser said `ok` AND revocation is active. A
- * `revoked` server result OR `revocation.status === "revoked"` is a DISTINCT
- * revoked state (crypto valid ≠ diploma valid — never show "Vérifié" on crypto
- * alone). Any other case (client `ok:false`) is an invalid verdict.
+ * `revoked` server result OR `revocation.status === "revoked"` is tracked as a
+ * DISTINCT internal branch below (crypto valid ≠ diploma valid — never show
+ * "Vérifié" on crypto alone) — that distinction still matters for CORRECTNESS
+ * (it is what stops "Vérifié" from ever appearing on a revoked diploma). But
+ * per PLAN.md P6 (fuse the public verdict 5 → 2, `docs/architecture.md`
+ * §12.1-§12.2), the CARD it renders is the exact same generic `FailedCard` as
+ * the "invalid" branch below — the public presentation no longer exposes
+ * *which* of the two it was.
  *
- * v1 (`proofBundle === null`): strictly the historical behaviour, untouched.
+ * v1 (`proofBundle === null`): strictly the historical behaviour, untouched —
+ * `FailedCard` itself fuses whichever of the 5 internal `VerificationResult`
+ * values it's handed into the same public message.
  */
 function ResultCard({
   result,

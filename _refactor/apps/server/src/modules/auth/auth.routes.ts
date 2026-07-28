@@ -1,8 +1,17 @@
 import { zValidator } from "../../lib/validator";
+import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
-import { ADMIN_COOKIE, CLAIM, COOKIE, MFA, OTP, RATE_LIMIT } from "../../config/constants";
+import {
+  ADMIN_COOKIE,
+  CLAIM,
+  COOKIE,
+  MFA,
+  OTP,
+  RATE_LIMIT,
+  REFRESH_ROTATION,
+} from "../../config/constants";
 import { env } from "../../config/env";
 import type { AdminSessionDTO, ClaimInfoDTO, MfaChallengeDTO, SessionDTO } from "@certifychain/contract/dto";
 import {
@@ -18,6 +27,7 @@ import {
   diplomas,
   otpCodes,
   platformAdmins,
+  type RefreshSession,
   refreshSessions,
   schoolAdmins,
   schools,
@@ -60,22 +70,119 @@ import { claimAlias } from "./claim.service";
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
-/** Persist a fresh refresh session and return the opaque token to set as a cookie. */
+/**
+ * Persist a fresh refresh session and return the opaque token to set as a
+ * cookie. `familyId` is the rotation family (P3, PLAN.md) this session
+ * belongs to: omitted at login (a brand-new family, by convention equal to
+ * this session's own id — generated client-side so it's known before the
+ * insert), passed through on rotation (`rotateRefreshSession`).
+ */
 async function createRefreshSession(
   subjectType: "school_admin" | "student" | "admin",
   subjectId: string,
   userAgent: string,
-): Promise<string> {
+  familyId?: string,
+): Promise<{ token: string; id: string }> {
+  const id = randomUUID();
   const refreshToken = generateRefreshToken();
   const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_TTL * 1000);
   await db.insert(refreshSessions).values({
+    id,
     subjectType,
     subjectId,
     tokenHash: hashRefreshToken(refreshToken),
     expiresAt,
     userAgent: userAgent || null,
+    familyId: familyId ?? id,
   });
-  return refreshToken;
+  return { token: refreshToken, id };
+}
+
+/**
+ * Rotates a refresh session: mints the replacement (same family), then marks
+ * the presented session revoked + `replacedById` pointing at it. The new row
+ * is created FIRST so the self-referencing FK on the old row is always valid.
+ */
+async function rotateRefreshSession(session: RefreshSession, userAgent: string): Promise<string> {
+  const { token, id } = await createRefreshSession(
+    session.subjectType,
+    session.subjectId,
+    userAgent,
+    session.familyId,
+  );
+  await db
+    .update(refreshSessions)
+    .set({ revokedAt: new Date(), replacedById: id })
+    .where(eq(refreshSessions.id, session.id));
+  return token;
+}
+
+/**
+ * Distingue une COURSE INTER-ONGLETS bénigne d'un vrai rejeu, avant de déclencher
+ * la containment ci-dessous. Le refresh « single-flight » du client
+ * (`packages/shared/src/api/client.ts`) est un état de module, donc par onglet :
+ * deux onglets de la même appli partagent le cookie jar, l'onglet A tourne le
+ * jeton pendant qu'une requête de l'onglet B est déjà en vol avec l'ancien
+ * cookie. Ce jeton arrive alors légitimement « déjà tourné », à quelques
+ * centaines de ms de la rotation — sans grâce, on révoquerait toute la famille
+ * (déconnexion totale, y compris l'onglet A) et on écrirait un événement de
+ * sécurité FAUX, polluant précisément le signal qu'on vient d'ajouter.
+ *
+ * Est donc une course, et non un vol, un jeton qui cumule :
+ *  1. une rotation datant de moins de `REFRESH_ROTATION.REUSE_GRACE_MS`
+ *     (`revokedAt` porte l'instant exact de la rotation) ;
+ *  2. un remplaçant TOUJOURS actif — si la famille a retourné depuis, ou si le
+ *     remplaçant a été révoqué/a expiré, le rejeu n'est plus explicable par une
+ *     requête en vol.
+ * Hors de ces deux conditions, le comportement anti-vol s'applique intégralement :
+ * un voleur doit exfiltrer puis rejouer, ce qui le place hors fenêtre. Et même
+ * dans la fenêtre il n'obtient rien — la grâce renvoie un 401 ordinaire, elle ne
+ * délivre aucun jeton.
+ */
+async function isRotationRace(session: RefreshSession): Promise<boolean> {
+  if (!session.revokedAt || !session.replacedById) return false;
+  if (Date.now() - session.revokedAt.getTime() > REFRESH_ROTATION.REUSE_GRACE_MS) return false;
+  const [replacement] = await db
+    .select({ revokedAt: refreshSessions.revokedAt, expiresAt: refreshSessions.expiresAt })
+    .from(refreshSessions)
+    .where(eq(refreshSessions.id, session.replacedById))
+    .limit(1);
+  return Boolean(replacement && !replacement.revokedAt && replacement.expiresAt > new Date());
+}
+
+/**
+ * Session-theft containment (P3, PLAN.md): presenting a token that was
+ * ALREADY rotated once (revoked AND `replacedById` non-null) means the
+ * presented token was captured and replayed — the legitimate holder already
+ * moved on to its replacement. Revoke every still-active session in the same
+ * family (including the one that replaced it) and leave a durable audit
+ * trail, mirroring the other durable security events in this file.
+ */
+async function revokeFamilyOnReuse(session: RefreshSession): Promise<void> {
+  await db
+    .update(refreshSessions)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(refreshSessions.familyId, session.familyId), isNull(refreshSessions.revokedAt)));
+
+  let schoolId: string | undefined;
+  if (session.subjectType === "school_admin") {
+    const [admin] = await db
+      .select({ schoolId: schoolAdmins.schoolId })
+      .from(schoolAdmins)
+      .where(eq(schoolAdmins.id, session.subjectId))
+      .limit(1);
+    schoolId = admin?.schoolId;
+  }
+
+  await recordAudit({
+    type: "refresh_reuse_detected",
+    schoolId,
+    metadata: {
+      subjectType: session.subjectType,
+      subjectId: session.subjectId,
+      familyId: session.familyId,
+    },
+  });
 }
 
 type MfaPlan =
@@ -84,12 +191,20 @@ type MfaPlan =
 
 /**
  * Decides the next MFA step from an account's stored enrollment state.
- * Enrolled → verify against the stored secret. Not yet enrolled → mint a fresh
- * secret to enroll (the caller persists `encrypted` and shows the QR/secret).
+ * Enrolled → verify against the stored secret. Not yet enrolled → enroll,
+ * reusing a secret already minted by a PREVIOUS pass through step 1 if one
+ * exists (P9 / audit R2): regenerating it on every password submission would
+ * invalidate a QR code the user already scanned the moment they hit "back"
+ * and log in again before finishing enrollment. Only mint a brand-new secret
+ * the very first time (no `totpSecret` stored yet). The secret stays stable
+ * until `totpEnabledAt` is actually set (enrollment finalized).
  */
 function mfaPlan(totpSecret: string | null, totpEnabledAt: Date | null): MfaPlan {
   if (totpEnabledAt && totpSecret) {
     return { stage: "verify", secretB32: keyVault.decryptToString(totpSecret) };
+  }
+  if (totpSecret) {
+    return { stage: "enroll", secretB32: keyVault.decryptToString(totpSecret), encrypted: totpSecret };
   }
   const secretB32 = generateTotpSecret();
   return { stage: "enroll", secretB32, encrypted: keyVault.encrypt(secretB32) };
@@ -225,7 +340,11 @@ export const authRoutes = new Hono<AppEnv>()
         .where(eq(schoolAdmins.id, row.admin.id));
     }
 
-    const refreshToken = await createRefreshSession("school_admin", row.admin.id, shortUserAgent(c));
+    const { token: refreshToken } = await createRefreshSession(
+      "school_admin",
+      row.admin.id,
+      shortUserAgent(c),
+    );
     const access = await signAccessToken({
       sub: row.admin.id,
       role: "school_admin",
@@ -375,7 +494,7 @@ export const authRoutes = new Hono<AppEnv>()
     if (!student || !student.email) throw fail.internal();
     const studentEmail = student.email;
 
-    const refreshToken = await createRefreshSession("student", student.id, shortUserAgent(c));
+    const { token: refreshToken } = await createRefreshSession("student", student.id, shortUserAgent(c));
     const access = await signAccessToken({
       sub: student.id,
       role: "student",
@@ -407,16 +526,28 @@ export const authRoutes = new Hono<AppEnv>()
   const [session] = await db
     .select()
     .from(refreshSessions)
-    .where(
-      and(
-        eq(refreshSessions.tokenHash, tokenHash),
-        isNull(refreshSessions.revokedAt),
-        gt(refreshSessions.expiresAt, new Date()),
-      ),
-    )
+    .where(eq(refreshSessions.tokenHash, tokenHash))
     .limit(1);
 
   if (!session || session.subjectType === "admin") {
+    clearAuthCookies(c);
+    throw fail.unauthorized();
+  }
+
+  // Reuse of an already-rotated token = session theft (P3, PLAN.md): the
+  // legitimate holder already moved on to `replacedById`. Contain the whole
+  // family and fail closed — distinct from a plain revoke (logout, school
+  // status change) or a plain expiry, neither of which is a theft signal.
+  if (session.revokedAt && session.replacedById) {
+    // …sauf course inter-onglets (cf. `isRotationRace`) : échec ordinaire, et
+    // surtout SANS purger les cookies — le jar porte déjà le jeton de
+    // remplacement valide, l'effacer déconnecterait la session légitime.
+    if (await isRotationRace(session)) throw fail.unauthorized();
+    await revokeFamilyOnReuse(session);
+    clearAuthCookies(c);
+    throw fail.unauthorized();
+  }
+  if (session.revokedAt || session.expiresAt <= new Date()) {
     clearAuthCookies(c);
     throw fail.unauthorized();
   }
@@ -469,12 +600,7 @@ export const authRoutes = new Hono<AppEnv>()
     claims = { sub: student.id, role: "student", email: student.email };
   }
 
-  await db
-    .update(refreshSessions)
-    .set({ revokedAt: new Date() })
-    .where(eq(refreshSessions.id, session.id));
-
-  const refreshToken = await createRefreshSession(session.subjectType, session.subjectId, shortUserAgent(c));
+  const refreshToken = await rotateRefreshSession(session, shortUserAgent(c));
   const access = await signAccessToken(claims);
   setAuthCookies(c, { access, refresh: refreshToken, csrf: urlToken(18) }, "public");
 
@@ -673,7 +799,7 @@ export const authRoutes = new Hono<AppEnv>()
     if (!student.email) throw fail.internal();
     const studentEmail = student.email;
 
-    const refreshToken = await createRefreshSession("student", student.id, shortUserAgent(c));
+    const { token: refreshToken } = await createRefreshSession("student", student.id, shortUserAgent(c));
     const access = await signAccessToken({ sub: student.id, role: "student", email: studentEmail });
     setAuthCookies(c, { access, refresh: refreshToken, csrf: urlToken(18) }, "public");
 
@@ -815,7 +941,7 @@ export const authRoutes = new Hono<AppEnv>()
         .where(eq(platformAdmins.id, admin.id));
     }
 
-    const refreshToken = await createRefreshSession("admin", admin.id, shortUserAgent(c));
+    const { token: refreshToken } = await createRefreshSession("admin", admin.id, shortUserAgent(c));
     const access = await signAccessToken({ sub: admin.id, role: "admin", email: admin.email });
     setAuthCookies(c, { access, refresh: refreshToken, csrf: urlToken(18) }, "admin");
     clearMfaCookie(c, "admin");
@@ -852,13 +978,24 @@ export const authRoutes = new Hono<AppEnv>()
       and(
         eq(refreshSessions.tokenHash, hashRefreshToken(presented)),
         eq(refreshSessions.subjectType, "admin"),
-        isNull(refreshSessions.revokedAt),
-        gt(refreshSessions.expiresAt, new Date()),
       ),
     )
     .limit(1);
 
   if (!session) {
+    clearAuthCookies(c, "admin");
+    throw fail.unauthorized();
+  }
+
+  // Same theft-containment logic as the public /auth/refresh (P3, PLAN.md),
+  // grâce inter-onglets comprise.
+  if (session.revokedAt && session.replacedById) {
+    if (await isRotationRace(session)) throw fail.unauthorized();
+    await revokeFamilyOnReuse(session);
+    clearAuthCookies(c, "admin");
+    throw fail.unauthorized();
+  }
+  if (session.revokedAt || session.expiresAt <= new Date()) {
     clearAuthCookies(c, "admin");
     throw fail.unauthorized();
   }
@@ -873,12 +1010,7 @@ export const authRoutes = new Hono<AppEnv>()
     throw fail.unauthorized();
   }
 
-  await db
-    .update(refreshSessions)
-    .set({ revokedAt: new Date() })
-    .where(eq(refreshSessions.id, session.id));
-
-  const refreshToken = await createRefreshSession("admin", admin.id, shortUserAgent(c));
+  const refreshToken = await rotateRefreshSession(session, shortUserAgent(c));
   const access = await signAccessToken({ sub: admin.id, role: "admin", email: admin.email });
   setAuthCookies(c, { access, refresh: refreshToken, csrf: urlToken(18) }, "admin");
 

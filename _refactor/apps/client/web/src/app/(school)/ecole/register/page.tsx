@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 import { registerSchool } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { ApiClientError, apiErrorMessage } from "@/lib/api/client";
 import { Button, Field, Input, useToast } from "@certifychain/shared/ui";
 import { AuthShell } from "@/components/school";
 import type { RegisterSchoolInput } from "@certifychain/contract/schemas";
@@ -240,16 +240,12 @@ export default function SchoolRegisterPage() {
       const res = await registerSchool(buildPayload(normalized));
       setDone(res.status === "provisional" ? "provisional" : "pending");
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        const mapped = mapServerError(err);
-        if (mapped) {
-          setErrors(mapped);
-          focusFirstError(mapped);
-        } else {
-          toastError("Envoi impossible", err.message);
-        }
+      const mapped = err instanceof ApiClientError ? mapServerError(err) : null;
+      if (mapped) {
+        setErrors(mapped);
+        focusFirstError(mapped);
       } else {
-        toastError("Envoi impossible", "Une erreur inattendue est survenue.");
+        toastError("Envoi impossible", apiErrorMessage(err));
       }
     } finally {
       setSubmitting(false);

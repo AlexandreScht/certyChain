@@ -1,5 +1,6 @@
-import { and, desc, eq } from "drizzle-orm";
-import type { ShareLinkDTO, WalletDiplomaDTO } from "@certifychain/contract/dto";
+import { and, asc, count, desc, eq } from "drizzle-orm";
+import type { ShareLinkDTO, ShareLinkListDTO, WalletDiplomaDTO } from "@certifychain/contract/dto";
+import type { ListShareLinksQuery } from "@certifychain/contract/schemas";
 import { env } from "../../config/env";
 import { db } from "../../db/client";
 import { diplomas, schools, shareLinks, vcIssuerKeys } from "../../db/schema";
@@ -115,4 +116,32 @@ export async function ownsDiploma(diplomaId: string, studentId: string): Promise
     .where(and(eq(diplomas.id, diplomaId), eq(diplomas.studentId, studentId)))
     .limit(1);
   return Boolean(row);
+}
+
+/**
+ * Paginated share links for one diploma (R4, audit 2026-07-28) — same
+ * page/pageSize convention as the admin lists (`listSchoolsForAdmin` et al.).
+ * Ordering (oldest first) is unchanged from the pre-pagination behaviour;
+ * only bounding + a `total` count are new. Caller (`wallet.routes.ts`) has
+ * already checked ownership via `ownsDiploma`.
+ */
+export async function listShareLinksForDiploma(
+  diplomaId: string,
+  q: ListShareLinksQuery,
+): Promise<ShareLinkListDTO> {
+  const [totalRow] = await db
+    .select({ value: count() })
+    .from(shareLinks)
+    .where(eq(shareLinks.diplomaId, diplomaId));
+  const total = totalRow?.value ?? 0;
+
+  const rows = await db
+    .select()
+    .from(shareLinks)
+    .where(eq(shareLinks.diplomaId, diplomaId))
+    .orderBy(asc(shareLinks.createdAt))
+    .limit(q.pageSize)
+    .offset((q.page - 1) * q.pageSize);
+
+  return { items: rows.map(toShareLinkDTO), total, page: q.page, pageSize: q.pageSize };
 }

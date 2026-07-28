@@ -23,7 +23,7 @@ import {
   verifyClaimOtp,
   resendClaim,
 } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { ApiClientError, apiErrorMessage } from "@/lib/api/client";
 import type { ClaimInfoDTO } from "@certifychain/contract/dto";
 import { Button, Card, Field, Input, Spinner, useToast } from "@certifychain/shared/ui";
 import { WalletLogo } from "@/components/wallet/WalletLogo";
@@ -69,9 +69,7 @@ export default function ClaimPage({ params }: PageProps): JSX.Element {
       })
       .catch((err: unknown) => {
         if (!active) return;
-        const message =
-          err instanceof ApiClientError ? err.message : "Impossible de charger ce lien.";
-        setState({ status: "error", message });
+        setState({ status: "error", message: apiErrorMessage(err, "Impossible de charger ce lien.") });
       });
     return () => {
       active = false;
@@ -85,7 +83,9 @@ export default function ClaimPage({ params }: PageProps): JSX.Element {
       setResend("sent");
     } catch (err) {
       setResend("idle");
-      if (err instanceof ApiClientError) toast.error("Envoi impossible", err.message);
+      // Always give the student a visible outcome — including on an
+      // unexpected exception, which used to be swallowed silently (audit R3).
+      toast.error("Envoi impossible", apiErrorMessage(err));
     }
   };
 
@@ -98,7 +98,8 @@ export default function ClaimPage({ params }: PageProps): JSX.Element {
       toast.toast({ title: "Vérifiez votre boîte mail", description: OTP_HINT });
       setStep("code");
     } catch (err) {
-      if (err instanceof ApiClientError) toast.error("Envoi impossible", err.message);
+      // Same rationale as handleResend above — never a silent failure (R3).
+      toast.error("Envoi impossible", apiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -118,10 +119,12 @@ export default function ClaimPage({ params }: PageProps): JSX.Element {
       toast.toast({ title: "Diplôme récupéré", description: "Bienvenue dans votre portefeuille." });
       router.push("/");
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        setCodeError(err.message);
-        toast.error("Code invalide", err.message);
-      }
+      // Same rationale as handleResend above — never a silent failure (R3);
+      // the title stays honest when the failure isn't actually about the
+      // code (e.g. a rate limit or a network hiccup).
+      const message = apiErrorMessage(err);
+      setCodeError(message);
+      toast.error(err instanceof ApiClientError ? "Code invalide" : "Vérification impossible", message);
     } finally {
       setSubmitting(false);
     }

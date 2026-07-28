@@ -51,8 +51,6 @@ import type {
   CdcIdentityImportResultDTO,
   CdcExportDetailDTO,
   CdcExportListDTO,
-  LogCheckpointDTO,
-  TransparencyProofDTO,
   SchoolJournalDTO,
   ReportJournalResultDTO,
 } from "@certifychain/contract/dto";
@@ -277,20 +275,24 @@ export function checkRevocation(diplomaId: string): Promise<RevocationStatusDTO>
   return unwrap(api.verify.revocation[":diplomaId"].$get({ param: { diplomaId } }));
 }
 
-/* ── Registre public de transparence (v2.md §V3) ────────────────────────── */
-
-/** Latest signed checkpoint (STH) of the public issuance log — no auth, no PII. */
-export function getLogCheckpoint(): Promise<LogCheckpointDTO> {
-  return unwrap(api.log.checkpoint.$get());
-}
-
-/**
- * RFC 6962 inclusion proof for one diploma. A uniform 404 means malformed,
- * unknown OR not yet journaled (anti-enumeration, mirror of `/verify/revocation`).
+/*
+ * NOTE (v4-front, diagnostic §2.5): this file used to also export
+ * `getLogCheckpoint()` / `getInclusionProof()` (`GET /log/checkpoint` /
+ * `GET /log/inclusion/:id`, v2.md §V3-3) with ZERO call sites anywhere in the
+ * repo. Removed as dead code, not left as a stub for a missing UI: the only
+ * shipped user journey that needs transparency data — a recruiter verifying
+ * ONE diploma on `/verify/[token]` or `/verifier` — already gets its
+ * `leafIndex`/`leafHash`/`auditPath`/`checkpoint` embedded directly in the
+ * proof bundle returned by `POST /verify/:token/proof` (see
+ * `verify.routes.ts`), which `TransparencyPanel` verifies 100% client-side —
+ * no separate network round-trip to these routes was ever needed for that
+ * flow. Nothing in `PLAN.md`/`v2.md`/`copy.md` commits to a standalone public
+ * "look up any diploma by ID" registry-browser page (the school-facing
+ * `/ecole/journal` is a different, already-wired feature). The two server
+ * routes themselves are NOT dead: they stay public API surface for
+ * independent third-party auditors and are exercised directly by
+ * `apps/server/src/scripts/smoke.ts` (raw `fetch`, not through this file).
  */
-export function getInclusionProof(diplomaId: string): Promise<TransparencyProofDTO> {
-  return unwrap(api.log.inclusion[":diplomaId"].$get({ param: { diplomaId } }));
-}
 
 /* ── Journal de transparence — portail école (v2.md §V3-6) ──────────────── */
 

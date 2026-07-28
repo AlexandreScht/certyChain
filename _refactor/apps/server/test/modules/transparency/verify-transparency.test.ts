@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import type { ProofBundleDTO, TransparencyProofDTO } from "@certifychain/contract/dto";
-import { verifyProofBundle } from "@certifychain/shared/crypto/verify-bundle";
+import { verifyProofBundle, type TrustedRoots } from "@certifychain/shared/crypto/verify-bundle";
 import { verifyTransparency } from "@certifychain/shared/crypto/verify-transparency";
 import { canonicalize } from "../../../src/crypto/hashing";
 import {
@@ -148,12 +148,22 @@ function buildFixture(disclosedFields: (keyof SdEmissionFields)[]): Fixture {
 
 const flipNibble = (hex: string): string => (hex.startsWith("0") ? "f" : "0") + hex.slice(1);
 
+/**
+ * Root pinning (audit 2026-07-27): this suite signs everything with a
+ * per-test TEST root key pair (see module doc above — never the env root),
+ * so the trust anchor for each call is derived straight from the bundle that
+ * same test just built. Never optional, never read back implicitly.
+ */
+function rootsOf(bundle: ProofBundleDTO): TrustedRoots {
+  return { ed25519: [bundle.root.publicKey], mlDsa65: [] };
+}
+
 describe("verifyTransparency — bout-en-bout (pièces de prod, sans DB)", () => {
   it("accepts a genuine bundle with issuedAt disclosed → binding 'full'", async () => {
     const { bundle } = buildFixture(["issuedAt", "holderName"]);
     // Fixture sanity: the bundle itself is a REAL, verifiable v2 bundle.
-    assert.equal((await verifyProofBundle(bundle)).ok, true);
-    const outcome = await verifyTransparency(bundle);
+    assert.equal((await verifyProofBundle(bundle, rootsOf(bundle))).ok, true);
+    const outcome = await verifyTransparency(bundle, rootsOf(bundle));
     assert.deepEqual(outcome, {
       ok: true,
       binding: "full",
@@ -166,15 +176,15 @@ describe("verifyTransparency — bout-en-bout (pièces de prod, sans DB)", () =>
 
   it("returns the same verdict through the forced pure-JS @noble path", async () => {
     const { bundle } = buildFixture(["issuedAt"]);
-    const viaDefault = await verifyTransparency(bundle);
-    const viaNoble = await verifyTransparency(bundle, { forceNoble: true });
+    const viaDefault = await verifyTransparency(bundle, rootsOf(bundle));
+    const viaNoble = await verifyTransparency(bundle, rootsOf(bundle), { forceNoble: true });
     assert.deepEqual(viaNoble, viaDefault);
     assert.equal(viaNoble.ok, true);
   });
 
   it("issuedAt NOT disclosed → ok with binding 'hash-only' and zero masked values in the outcome", async () => {
     const { bundle } = buildFixture(["holderName"]);
-    const outcome = await verifyTransparency(bundle);
+    const outcome = await verifyTransparency(bundle, rootsOf(bundle));
     assert.equal(outcome.ok, true);
     if (outcome.ok) assert.equal(outcome.binding, "hash-only");
     // Never guess nor expose a masked value: the serialized outcome must not
@@ -189,9 +199,9 @@ describe("verifyTransparency — bout-en-bout (pièces de prod, sans DB)", () =>
     const { bundle } = buildFixture(["issuedAt"]);
     const withoutField: ProofBundleDTO = { ...bundle };
     delete withoutField.transparency;
-    const a = await verifyTransparency(withoutField);
+    const a = await verifyTransparency(withoutField, rootsOf(withoutField));
     assert.deepEqual(a, { ok: false, reason: "no transparency proof" });
-    const b = await verifyTransparency({ ...bundle, transparency: null });
+    const b = await verifyTransparency({ ...bundle, transparency: null }, rootsOf(bundle));
     assert.deepEqual(b, { ok: false, reason: "no transparency proof" });
   });
 
@@ -199,7 +209,7 @@ describe("verifyTransparency — bout-en-bout (pièces de prod, sans DB)", () =>
     const { bundle } = buildFixture(["issuedAt"]);
     const t = bundle.transparency as TransparencyProofDTO;
     t.checkpoint.signature = t.checkpoint.signature.slice(0, -4) + "AAAA";
-    const outcome = await verifyTransparency(bundle);
+    const outcome = await verifyTransparency(bundle, rootsOf(bundle));
     assert.equal(outcome.ok, false);
     if (!outcome.ok) assert.match(outcome.reason, /checkpoint signature/);
   });
@@ -213,7 +223,7 @@ describe("verifyTransparency — bout-en-bout (pièces de prod, sans DB)", () =>
       rootHash: t.checkpoint.rootHash,
       timestamp: t.checkpoint.timestamp,
     });
-    const outcome = await verifyTransparency(bundle);
+    const outcome = await verifyTransparency(bundle, rootsOf(bundle));
     assert.equal(outcome.ok, false);
     if (!outcome.ok) assert.match(outcome.reason, /checkpoint signature/);
   });
@@ -228,7 +238,7 @@ describe("verifyTransparency — bout-en-bout (pièces de prod, sans DB)", () =>
       rootHash: forgedRoot,
       timestamp: t.checkpoint.timestamp,
     });
-    const outcome = await verifyTransparency(bundle);
+    const outcome = await verifyTransparency(bundle, rootsOf(bundle));
     assert.equal(outcome.ok, false);
     if (!outcome.ok) assert.match(outcome.reason, /not included/);
   });
@@ -237,7 +247,7 @@ describe("verifyTransparency — bout-en-bout (pièces de prod, sans DB)", () =>
     const { bundle } = buildFixture(["issuedAt"]);
     const t = bundle.transparency as TransparencyProofDTO;
     t.auditPath = t.auditPath.map((h, i) => (i === 0 ? flipNibble(h) : h));
-    const outcome = await verifyTransparency(bundle);
+    const outcome = await verifyTransparency(bundle, rootsOf(bundle));
     assert.equal(outcome.ok, false);
     if (!outcome.ok) assert.match(outcome.reason, /not included/);
   });
@@ -246,7 +256,7 @@ describe("verifyTransparency — bout-en-bout (pièces de prod, sans DB)", () =>
     const { bundle } = buildFixture(["issuedAt"]);
     const t = bundle.transparency as TransparencyProofDTO;
     t.leafIndex = LEAF_INDEX + 1;
-    const outcome = await verifyTransparency(bundle);
+    const outcome = await verifyTransparency(bundle, rootsOf(bundle));
     assert.equal(outcome.ok, false);
     if (!outcome.ok) assert.match(outcome.reason, /not included/);
   });
@@ -269,7 +279,7 @@ describe("verifyTransparency — bout-en-bout (pièces de prod, sans DB)", () =>
     otherLeaves[LEAF_INDEX] = leafB.leafHashHex;
     // …and its (valid!) proof gets glued onto diploma A's bundle.
     bundle.transparency = makeTransparency(otherLeaves, LEAF_INDEX, rootPrivateKey);
-    const outcome = await verifyTransparency(bundle);
+    const outcome = await verifyTransparency(bundle, rootsOf(bundle));
     assert.equal(outcome.ok, false);
     if (!outcome.ok) assert.match(outcome.reason, /does not match this diploma/);
   });

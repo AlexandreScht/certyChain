@@ -104,21 +104,33 @@ describe("VerifyExperience — verdict piloté par le client", () => {
 
     render(<VerifyExperience token="tok-2" />);
 
+    // PLAN.md P6 (fusion publique 5 → 2) : le titre affiché est le même
+    // générique « Diplôme introuvable » quelle que soit la raison interne
+    // (ici : crypto invalide) — voir `failed-card.spec.tsx` pour la preuve
+    // que les 4 états non-vérifiés rendent tous ce même titre.
     const heading = await screen.findByRole("heading", { level: 1 });
-    expect(heading.textContent).toBe("Vérification invalide");
+    expect(heading.textContent).toBe("Diplôme introuvable");
     expect(screen.queryByText("Diplôme vérifié")).not.toBeInTheDocument();
-    expect(verifyBundleMock).toHaveBeenCalledWith(bundle);
+    // Second arg = the pinned trust anchor (`TRUSTED_ROOTS`, `@/lib/trusted-roots`)
+    // — root pinning fix (audit 2026-07-27). Not asserting its exact value here:
+    // that anchor's own content is covered by `verify-bundle-root-pinning.spec.ts`.
+    expect(verifyBundleMock).toHaveBeenCalledWith(bundle, expect.anything());
   });
 
-  it("affiche l'état « Révoqué » distinct quand revocation.status === revoked, même si la crypto est valide", async () => {
+  it("ne montre jamais « Vérifié » quand revocation.status === revoked, même si la crypto est valide — même carte fusionnée que l'invalide (P6)", async () => {
     const bundle = makeBundle({ status: "revoked" });
     proofMock.mockResolvedValue(v2Result(bundle, "verified"));
     verifyBundleMock.mockResolvedValue({ ok: true, disclosed: {}, hidden: 7 });
 
     render(<VerifyExperience token="tok-3" />);
 
+    // Même titre générique que le cas "invalide" ci-dessus : la fusion 5 → 2
+    // ne doit jamais redevenir un prétexte à afficher « Vérifié » (v2.md
+    // piège n°5), ET elle ne doit plus exposer publiquement laquelle des 2
+    // raisons internes (révoqué vs crypto invalide) s'est produite.
     const heading = await screen.findByRole("heading", { level: 1 });
-    expect(heading.textContent).toBe("Diplôme révoqué");
+    expect(heading.textContent).toBe("Diplôme introuvable");
+    expect(screen.queryByText("Diplôme vérifié")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Télécharger la preuve/ }),
     ).not.toBeInTheDocument();

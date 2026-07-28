@@ -30,6 +30,14 @@ COPY apps/client/admin ./apps/client/admin
 # NEXT_PUBLIC_* are inlined into the client bundle at BUILD time.
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Root pinning (audit 2026-07-27) — parity with `apps/client/web/Dockerfile`.
+# Not consumed by any admin source file today (only `web` renders the offline
+# verifier), wired here so the three fronts share one build-arg contract and
+# any future admin-side verification UI gets the same anchor for free.
+ARG NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY=
+ARG NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY=
+ENV NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY=$NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY
+ENV NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY=$NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY
 ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production
 RUN pnpm --filter @certifychain/admin build
 

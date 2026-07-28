@@ -1,8 +1,25 @@
 import { cors } from "hono/cors";
 import type { MiddlewareHandler } from "hono";
 import { secureHeaders } from "hono/secure-headers";
+import { RETRY_AFTER_HEADERS } from "@certifychain/contract/constants";
 import { CSRF_HEADER } from "../config/constants";
 import { env } from "../config/env";
+
+/**
+ * Rate-limit headers a cross-origin browser client must be able to READ.
+ *
+ * The fronts talk to this API cross-origin (`hc<AppType>(API_BASE)` → :4000, no
+ * rewrite), and `Retry-After` / `RateLimit-*` are NOT CORS-safelisted: without
+ * an explicit `Access-Control-Expose-Headers`, the browser strips them and
+ * `ApiClientError.retryAfterSeconds` is always `undefined` — so the "Trop de
+ * requêtes. Réessayez dans Xs." message (audit R6) can never fire. The list is
+ * anchored on {@link RETRY_AFTER_HEADERS} — the contract-level declaration the
+ * client reads from too — so the two can never drift apart. It comes from
+ * `@certifychain/contract` and NOT from `@certifychain/shared/api/client`:
+ * internal packages export raw sources (CLAUDE.md §3), so importing the browser
+ * module here would drag `document`/`RequestInfo` into the server's typecheck.
+ */
+const RATE_LIMIT_EXPOSED_HEADERS: string[] = [...RETRY_AFTER_HEADERS];
 
 /** Public artifacts fetched by third-party/native wallets without cookies. */
 export function isPublicVcReadPath(path: string): boolean {
@@ -65,15 +82,21 @@ export const corsMiddleware = (): MiddlewareHandler => {
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", CSRF_HEADER, "X-Request-Id"],
-    exposeHeaders: ["X-Request-Id", "RateLimit-Remaining"],
+    exposeHeaders: ["X-Request-Id", "RateLimit-Remaining", ...RATE_LIMIT_EXPOSED_HEADERS],
     maxAge: 600,
   });
+  // The public read surface is rate-limited per IP too (`/log/*`, `/vc/*`), and
+  // v2.md §V3-3 makes it explicitly pullable from ANY origin — a third-party
+  // auditor running in a browser must be able to back off on the delay the
+  // server actually returns instead of guessing one. Nothing is leaked: the
+  // response carries no credentials and every non-browser client already reads
+  // these headers.
   const publicReadCors = cors({
     origin: "*",
     credentials: false,
     allowMethods: ["GET", "OPTIONS"],
     allowHeaders: ["Content-Type", "Accept", "X-Request-Id"],
-    exposeHeaders: ["X-Request-Id"],
+    exposeHeaders: ["X-Request-Id", ...RATE_LIMIT_EXPOSED_HEADERS],
     maxAge: 600,
   });
   return (c, next) =>

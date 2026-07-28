@@ -1,5 +1,7 @@
+import { OUTBOUND_RATE_LIMIT } from "../config/constants";
 import { env } from "../config/env";
 import { logger } from "./logger";
+import { createTokenBucket } from "./token-bucket";
 
 /**
  * AI-assisted school validation via Google Gemini (REST, zero-dependency).
@@ -143,6 +145,17 @@ const ATTEMPT_TIMEOUT_MS = 15_000;
 const STAGGER_MS = 6_000;
 const MAX_RACERS = 3;
 
+/**
+ * Module-scoped token bucket (`config/constants.ts#OUTBOUND_RATE_LIMIT.GEMINI`)
+ * capping our OUTBOUND call rate to Gemini — one token per LOGICAL call
+ * (`postGenerateContent` below), regardless of how many racers it fires
+ * internally. Protects our own API quota with Gemini, never the inbound
+ * request: an exhausted bucket degrades EXACTLY like a missing
+ * `GEMINI_API_KEY` (every exported function here already returns `null` in
+ * that case and the caller falls back to manual review), never a thrown error.
+ */
+const geminiBucket = createTokenBucket(OUTBOUND_RATE_LIMIT.GEMINI);
+
 /** One outcome from a single racing attempt. */
 type AttemptOutcome =
   | { kind: "success"; text: string }
@@ -186,6 +199,13 @@ async function postGenerateContent(
   mode: "json" | "grounded",
 ): Promise<string | null> {
   if (!env.GEMINI_API_KEY) return null;
+  if (!geminiBucket.tryConsume()) {
+    // Never fail the caller's request over OUR outbound quota — degrade
+    // exactly like "no key configured" (every public function above already
+    // returns `null` in that case, and the feature falls back cleanly).
+    logger.warn("gemini.outbound_rate_limited", { mode });
+    return null;
+  }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     env.GEMINI_MODEL,

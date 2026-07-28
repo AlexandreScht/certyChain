@@ -107,14 +107,28 @@ export interface ShareLinkDTO {
   disclosedFields: string[];
 }
 
+/** Paginated `GET /wallet/diplomas/:id/shares` (R4, audit 2026-07-28) — same
+ *  shape as the admin list DTOs (`AdminSchoolListDTO` et al.). */
+export interface ShareLinkListDTO {
+  items: ShareLinkDTO[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface VerificationChallengeDTO {
   nonce: string;
   expiresAt: string;
 }
 
-/** The `ed25519-sd-v2` signed object (only id/schoolId visible; fields → digests). */
+/**
+ * The `ed25519-sd-v2` / `ed25519-sd-v3` signed object (only id/schoolId
+ * visible; fields → digests). `v: "sd-v3"` (v2.md §V4-1) is the SAME shape as
+ * `"sd-v2"` — it only marks that the diploma ALSO carries a post-quantum
+ * ML-DSA-65 signature (`ProofBundleDTO.signaturePq`) over this same payload.
+ */
 export interface SdPayloadDTO {
-  v: "sd-v2";
+  v: "sd-v2" | "sd-v3";
   h: "sha-256";
   id: string;
   schoolId: string;
@@ -135,6 +149,11 @@ export interface LogCheckpointDTO {
   timestamp: string;
   /** Base64 — the CertifyChain root signs {treeSize, rootHash, timestamp}. */
   signature: string;
+  /** Base64 ML-DSA-65 root signature of the SAME {treeSize, rootHash,
+   *  timestamp} message (v2.md §V4-1) — present only once `PQ_POLICY` is
+   *  enabled server-side; absent/undefined for checkpoints signed before that
+   *  (non-regression: they keep verifying Ed25519-only, exactly as before). */
+  signaturePq?: string;
   otsAnchored: boolean;
   otsUpgradedAt: string | null;
   /** Base64 detached `.ots` proof, null until anchored in a Bitcoin block. */
@@ -176,10 +195,18 @@ export interface LogConsistencyDTO {
  * appear only as opaque digests in `payload._sd`, never as values.
  */
 export interface ProofBundleDTO {
-  engine: "ed25519-sd-v2";
+  /** `"ed25519-sd-v3"` (v2.md §V4-1) is `"ed25519-sd-v2"` PLUS a mandatory
+   *  post-quantum ML-DSA-65 signature — hybrid "AND", never "OR". Existing v2
+   *  bundles keep the literal they always had; nothing about them changes. */
+  engine: "ed25519-sd-v2" | "ed25519-sd-v3";
   payload: SdPayloadDTO;
   /** Base64 Ed25519 signature (by the school) of the SHA-256 of the payload. */
   signature: string;
+  /** Base64 ML-DSA-65 signature (by the school) of the SAME SHA-256 of the
+   *  payload (v2.md §V4-1) — present only for `payload.v === "sd-v3"`. A v3
+   *  bundle missing this, or whose value fails to verify, is REJECTED: both
+   *  signatures must hold, hybrid "AND". Absent/undefined for v2 bundles. */
+  signaturePq?: string;
   /** Only the fields the holder disclosed to this recruiter. */
   disclosures: string[];
   school: {
@@ -190,10 +217,18 @@ export interface ProofBundleDTO {
     /** Base64 — CertifyChain root signs {schoolId, publicKey, name, issuedAt}. */
     certificate: string;
     certIssuedAt: string;
+    /** Base64 raw ML-DSA-65 public key of the school (v2.md §V4-1) — v3 only. */
+    publicKeyPq?: string;
+    /** Base64 — CertifyChain root ML-DSA-65 signature over the SAME-SHAPE
+     *  certificate payload {schoolId, publicKey: publicKeyPq, name, issuedAt}
+     *  (same canonical form as `certificate`, different key material) — v3 only. */
+    certificatePq?: string;
   };
   root: {
     /** SPKI PEM of the CertifyChain PKI root. */
     publicKey: string;
+    /** Base64 raw ML-DSA-65 public key of the CertifyChain PKI root — v3 only. */
+    publicKeyPq?: string;
   };
   revocation: {
     checkedAt: string;

@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 import { getMySchool, getMyStats, activateSchool } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import {
   Button,
   Card,
@@ -56,9 +56,7 @@ export default function SchoolDashboardPage() {
       setSchool(schoolData);
       setStats(statsData);
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        toastError("Chargement impossible", err.message);
-      }
+      toastError("Chargement impossible", apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -85,9 +83,7 @@ export default function SchoolDashboardPage() {
         /* non-blocking */
       }
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        toastError("Activation impossible", err.message);
-      }
+      toastError("Activation impossible", apiErrorMessage(err));
     } finally {
       setActivating(false);
     }

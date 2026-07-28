@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 
 import { listAdminDiplomas } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { Button, Card, Input, Select, Table, PageHeader, useToast, type TableColumn } from "@certifychain/shared/ui";
 import { FadeIn, DiplomaStatusBadge } from "@/components/admin";
 import type { DiplomaDTO, DiplomaListDTO } from "@certifychain/contract/dto";
@@ -40,7 +40,7 @@ export default function AdminDiplomasPage() {
         }),
       );
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Chargement impossible", err.message);
+      toastError("Chargement impossible", apiErrorMessage(err));
     } finally {
       setLoading(false);
     }

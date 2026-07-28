@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 import { adminLogout } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@certifychain/shared/ui";
 import { cn } from "@certifychain/shared/lib/cn";
 import ThemeToggle from "@certifychain/shared/ui/ThemeToggle";
@@ -56,7 +56,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
     try {
       await adminLogout();
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Déconnexion", err.message);
+      // Never a silent failure, even on an unexpected exception (audit R3).
+      toastError("Déconnexion", apiErrorMessage(err));
     } finally {
       router.replace("/login");
     }

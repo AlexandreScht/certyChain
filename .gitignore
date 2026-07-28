@@ -42,6 +42,15 @@ yarn-error.log*
 .env*
 !.env.example
 
+# Docker secrets (P2, docs/security/root-secrets-rotation.md) — raw secret
+# VALUES only (root PKI private keys, MASTER_ENC_KEY); the placeholder README
+# explaining the convention stays tracked. `**/` prefix (not just `secrets/*`)
+# because a mid-pattern slash anchors to the .gitignore's OWN directory —
+# unlike the unanchored single-segment patterns above, this needs the
+# explicit `**/` to still match at any depth (`_refactor/secrets/...`).
+**/secrets/*
+!**/secrets/README.md
+
 # vercel
 .vercel
 

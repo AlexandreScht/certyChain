@@ -1,4 +1,4 @@
-/** App-wide constants (security-sensitive knobs live here, not scattered). */
+﻿/** App-wide constants (security-sensitive knobs live here, not scattered). */
 
 export const COOKIE = {
   /** Access JWT (short-lived). */
@@ -140,8 +140,46 @@ export const LOGIN_THROTTLE = {
   LOCK_SECONDS: 15 * 60,
 } as const;
 
+/** Rotation des sessions de refresh (P3). */
+export const REFRESH_ROTATION = {
+  /**
+   * Fenêtre de grâce du détecteur de rejeu. Le refresh « single-flight » du
+   * client est un état de module, donc PAR ONGLET : deux onglets de la même
+   * appli partagent le cookie jar, et une requête déjà en vol dans l'onglet B
+   * peut présenter l'ancien jeton quelques centaines de ms après que l'onglet A
+   * l'a tourné. Présenter un jeton tourné DEPUIS MOINS DE cette durée, alors
+   * que son remplaçant est toujours actif, n'est donc pas un vol (détail dans
+   * `auth.routes.ts` › `isRotationRace`). 10 s couvre largement un aller-retour
+   * HTTP lent + la mise à jour du cookie jar sans ouvrir d'angle mort : la
+   * grâce ne délivre aucun jeton, elle supprime seulement la révocation de
+   * famille et l'audit sur ce cas précis.
+   */
+  REUSE_GRACE_MS: 10_000,
+} as const;
+
 /**
- * Rate-limit budgets (in-memory fixed window; single-instance MVP — back with
+ * Outbound token-bucket budgets (`lib/token-bucket.ts`) protecting OUR quota
+ * with third-party APIs (SIRENE/Gemini) — in-memory, single-instance MVP,
+ * same assumption as `RATE_LIMIT` below. Deliberately conservative, arbitrary
+ * MVP values (neither provider publishes a hard number worth pinning to):
+ * both integrations are already optional and degrade cleanly without a key,
+ * and an exhausted bucket degrades the SAME way (never fails the caller's
+ * inbound request) — see `lib/insee.ts#lookupSiret` / `lib/gemini.ts#
+ * postGenerateContent`.
+ */
+export const OUTBOUND_RATE_LIMIT = {
+  /** INSEE Sirene lookups — one per school registration/re-validation, so a
+   *  small burst capacity plus a slow steady refill is plenty. */
+  INSEE: { capacity: 10, refillPerSec: 2 },
+  /** Gemini calls — each logical call already races up to 3 HTTP attempts
+   *  internally (`gemini.ts#postGenerateContent`) but consumes exactly ONE
+   *  token regardless, since the bucket caps LOGICAL calls, not raw HTTP
+   *  requests. */
+  GEMINI: { capacity: 5, refillPerSec: 1 },
+} as const;
+
+/**
+ * Rate-limit budgets (in-memory sliding window; single-instance MVP — back with
  * Redis for horizontal scale). Values are tuned around a key principle:
  *
  *   • Auth flows (login / OTP) are keyed on the TARGET ACCOUNT (email or user id),
@@ -168,11 +206,41 @@ export const RATE_LIMIT = {
   LOGIN_EMAIL: { max: 15, windowSec: 10 * 60 },
   /** TOTP second factor — per account (the MFA-pending subject). */
   TOTP_VERIFY_ACCOUNT: { max: 12, windowSec: 10 * 60 },
-  /** Public verification surface (recruiter, anonymous) — per IP. */
-  VERIFY_IP: { max: 60, windowSec: 60 },
+  /**
+   * Public verification surface (recruiter, anonymous) — per IP.
+   *
+   * Relevé du 2026-07-28 : UNE vérification consomme TROIS requêtes de ce
+   * budget — `POST /:token/challenge`, `POST /:token/proof`, puis le
+   * re-contrôle indépendant de révocation que le vérificateur navigateur lance
+   * sur `GET /revocation/:id` (cette route est sous le `.use("*")` du module,
+   * donc elle décompte ici EN PLUS de son propre plafond). L'ancien 60/60 s
+   * n'autorisait donc que 20 vérifications par minute pour une adresse de
+   * sortie ENTIÈRE — or c'est précisément la surface où l'IP représente le plus
+   * de personnes distinctes (service RH ou cabinet de recrutement derrière un
+   * seul NAT), et le profil d'usage nominal est la rafale : on vérifie une
+   * liste courte de candidats d'affilée, pas un diplôme toutes les 3 minutes.
+   *
+   * P7 a de plus remplacé la fenêtre FIXE par une fenêtre GLISSANTE : à valeur
+   * numérique identique, le plafond EFFECTIF a baissé près des frontières
+   * (le poids résiduel de la sous-fenêtre précédente continue de compter, là où
+   * une fenêtre fixe repartait de zéro). 60 avait été calibré sous l'ancienne
+   * sémantique ; il est devenu trop serré pour un usage légitime — constaté sur
+   * le Gate C, où trois passes de vérification consécutives déclenchaient une
+   * cascade de 429.
+   *
+   * 240/60 s ⇒ ~80 vérifications par minute et par IP de sortie : confortable
+   * pour une équipe RH partagée, et toujours 2,5× SOUS le garde-fou anonyme
+   * global (`GLOBAL_IP`, 600/60 s) — celui-ci reste donc la borne extérieure et
+   * ce plafond-ci continue de mordre en premier, comme prévu.
+   */
+  VERIFY_IP: { max: 240, windowSec: 60 },
   /** Public revocation oracle (`GET /verify/revocation/:id`) — per IP. Bounded so
-      the endpoint can't be used to enumerate diplomas (404 stays uniform anyway). */
-  VERIFY_REVOCATION_IP: { max: 60, windowSec: 60 },
+      the endpoint can't be used to enumerate diplomas (404 stays uniform anyway).
+      Reste STRICTEMENT plus serré que la surface complète ci-dessus (c'est la
+      seule route qui répond par oui/non sur un identifiant donné), mais relevé
+      en proportion : à 60 il serait devenu le goulot silencieux dès 60
+      vérifications/minute alors que le module en autorise 80. */
+  VERIFY_REVOCATION_IP: { max: 120, windowSec: 60 },
   /** Public transparency-log surface (`/log/*`, recruiter/auditor) — per IP. */
   TRANSPARENCY_IP: { max: 30, windowSec: 60 },
   /** School ownership-proof mutations — per IP. */

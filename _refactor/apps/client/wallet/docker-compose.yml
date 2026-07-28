@@ -17,12 +17,17 @@ services:
       dockerfile: apps/client/wallet/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        # Root pinning (audit 2026-07-27) — parity with `apps/client/web/docker-compose.yml`.
+        NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY: ${NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY:-}
+        NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY: ${NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY:-}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: "3001"
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+      NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY: ${NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY:-}
+      NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY: ${NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY:-}
     ports:
       - "${WALLET_BIND:-0.0.0.0}:3001:3001"
     read_only: true

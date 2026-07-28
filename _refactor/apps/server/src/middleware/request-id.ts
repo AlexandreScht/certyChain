@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
 import type { AppEnv } from "../http/types";
-import { logger } from "../lib/logger";
+import { logger, runWithRequestId } from "../lib/logger";
 
 /**
  * Replaces bearer/capability tokens that live in URL path segments with a
@@ -18,13 +18,20 @@ function redactPathTokens(path: string): string {
     .replace(/^(\/auth\/student\/claim\/)[^/]+/, "$1:token");
 }
 
-/** Assigns/propagates a request id and logs one structured line per request. */
+/**
+ * Assigns/propagates a request id, logs one structured line per request, and
+ * makes that id available to `logger.*()` for the ENTIRE handling of this
+ * request — every log line emitted while `next()` runs (any middleware,
+ * route handler, service, however deep, across `await`s) automatically
+ * carries the same `id` field (see `lib/logger.ts`'s `AsyncLocalStorage`),
+ * not just this middleware's own final summary line and the response header.
+ */
 export const requestId = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const id = c.req.header("x-request-id") ?? randomUUID();
   c.set("requestId", id);
   c.header("x-request-id", id);
   const start = Date.now();
-  await next();
+  await runWithRequestId(id, () => next());
   logger.info("http.request", {
     id,
     method: c.req.method,

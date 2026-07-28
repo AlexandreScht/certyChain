@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 import { getAdminStats } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { Button, Card, Stat, Skeleton, PageHeader, useToast } from "@certifychain/shared/ui";
 import { FadeIn } from "@/components/admin";
 import { AUDIT_LABELS } from "@/lib/audit-labels";
@@ -39,7 +39,9 @@ export default function AdminDashboardPage() {
     try {
       setStats(await getAdminStats());
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Chargement impossible", err.message);
+      // Never a silent failure, including on a rate limit or an unexpected
+      // exception (audit R3/R6).
+      toastError("Chargement impossible", apiErrorMessage(err));
     } finally {
       setLoading(false);
     }

@@ -132,6 +132,48 @@ describe("EudiExportAction", () => {
     expect(screen.queryByTestId("eudi-offer-qr")).toBeNull();
   });
 
+  // Audit R6 — cette route est rate-limitée par élève (`VC_OFFER`, voir
+  // `apps/server/src/config/constants.ts`) : un 429 doit nommer le délai
+  // concret plutôt qu'afficher un message générique.
+  it("affiche le délai d'attente concret sur un rate-limit (429)", async () => {
+    createEudiOfferMock.mockRejectedValueOnce(
+      new ApiClientError("Trop de requêtes, réessayez plus tard", {
+        code: "rate_limited",
+        status: 429,
+        retryAfterSeconds: 30,
+      }),
+    );
+    render(<EudiExportAction diplomaId="diploma-1" available />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /ajouter à mon portefeuille européen/i }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Trop de requêtes. Réessayez dans 30 s.",
+    );
+  });
+
+  // Sans délai exploitable, dégradation propre : un message générique, mais
+  // toujours pas un délai inventé.
+  it("dégrade proprement un rate-limit (429) sans délai connu", async () => {
+    createEudiOfferMock.mockRejectedValueOnce(
+      new ApiClientError("Trop de requêtes, réessayez plus tard", {
+        code: "rate_limited",
+        status: 429,
+      }),
+    );
+    render(<EudiExportAction diplomaId="diploma-1" available />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /ajouter à mon portefeuille européen/i }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Trop de requêtes, réessayez plus tard",
+    );
+  });
+
   it("régénère l'offre et remplace le QR ainsi que le tx_code", async () => {
     createEudiOfferMock
       .mockResolvedValueOnce(offer())

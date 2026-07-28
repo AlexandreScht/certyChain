@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Search, ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react";
 
 import { listAdminSchools } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { Button, Card, Input, Select, Table, PageHeader, useToast, type TableColumn } from "@certifychain/shared/ui";
 import { FadeIn, SchoolStatusBadge } from "@/components/admin";
 import type { AdminSchoolListDTO, AdminSchoolListItemDTO } from "@certifychain/contract/dto";
@@ -52,7 +52,7 @@ function SchoolsView() {
       });
       setData(res);
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Chargement impossible", err.message);
+      toastError("Chargement impossible", apiErrorMessage(err));
     } finally {
       setLoading(false);
     }

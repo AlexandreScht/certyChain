@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import { requestOtp, verifyOtp } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { ApiClientError, apiErrorMessage } from "@/lib/api/client";
 import { Button, Card, Field, Input, useToast } from "@certifychain/shared/ui";
 import { WalletLogo } from "@/components/wallet/WalletLogo";
 import ThemeToggle from "@certifychain/shared/ui/ThemeToggle";
@@ -43,9 +43,9 @@ export default function WalletLoginPage(): JSX.Element {
       toast.toast({ title: "Vérifiez votre boîte mail", description: OTP_HINT });
       setStep("code");
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        toast.error("Envoi impossible", err.message);
-      }
+      // Never a silent failure — including on a rate limit or an unexpected
+      // exception, previously swallowed here (audit R3).
+      toast.error("Envoi impossible", apiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -64,10 +64,11 @@ export default function WalletLoginPage(): JSX.Element {
       await verifyOtp({ email, code });
       router.push("/");
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        setCodeError(err.message);
-        toast.error("Code invalide", err.message);
-      }
+      // Never a silent failure (R3); keep the title honest when the failure
+      // isn't actually about the code (e.g. a rate limit).
+      const message = apiErrorMessage(err);
+      setCodeError(message);
+      toast.error(err instanceof ApiClientError ? "Code invalide" : "Connexion impossible", message);
     } finally {
       setSubmitting(false);
     }

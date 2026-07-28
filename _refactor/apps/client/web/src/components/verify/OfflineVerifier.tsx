@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   EyeOff,
   FileJson,
+  Layers,
   Loader2,
   ShieldCheck,
   ShieldX,
@@ -20,7 +21,8 @@ import {
   verifyProofBundle,
   type VerifyOutcome,
 } from "@certifychain/shared/crypto/verify-bundle";
-import { ApiClientError, checkRevocation } from "@/lib/api";
+import { ApiClientError, apiErrorMessage, checkRevocation } from "@/lib/api";
+import { TRUSTED_ROOTS } from "@/lib/trusted-roots";
 import {
   fieldLabel,
   formatDisclosedValue,
@@ -41,7 +43,7 @@ type RevocationState =
   | { kind: "checking" }
   | { kind: "active"; checkedAt: string }
   | { kind: "revoked" }
-  | { kind: "error" };
+  | { kind: "error"; message: string };
 
 /** Minimal structural guard so a random JSON gives a friendly message. */
 function looksLikeBundle(value: unknown): value is ProofBundleDTO {
@@ -87,7 +89,7 @@ export function OfflineVerifier(): JSX.Element {
     }
     setVerifying(true);
     try {
-      const outcome = await verifyProofBundle(parsed);
+      const outcome = await verifyProofBundle(parsed, TRUSTED_ROOTS);
       setLocal({ kind: "outcome", outcome, bundle: parsed });
     } finally {
       setVerifying(false);
@@ -111,11 +113,20 @@ export function OfflineVerifier(): JSX.Element {
       setRevocation({ kind: "active", checkedAt });
     } catch (err) {
       // A uniform 404 = revoked OR unknown (anti-enumeration). Anything else is
-      // a transport problem we surface as such.
+      // a transport problem we surface as such — including a 429 from this
+      // endpoint's own IP rate-limit (RATE_LIMIT.VERIFY_REVOCATION_IP), which
+      // `apiErrorMessage` turns into a concrete "réessayez dans Xs" (audit R6)
+      // instead of the flat generic text this used to show unconditionally.
       if (err instanceof ApiClientError && err.status === 404) {
         setRevocation({ kind: "revoked" });
       } else {
-        setRevocation({ kind: "error" });
+        setRevocation({
+          kind: "error",
+          message: apiErrorMessage(
+            err,
+            "Impossible de joindre le service de révocation. Réessayez plus tard.",
+          ),
+        });
       }
     }
   }, []);
@@ -330,6 +341,26 @@ function OfflineVerifiedResult({
         </div>
       )}
 
+      {/* Double signature post-quantique (v2.md §V4-1) — seulement pour un
+          bundle "sd-v3" (`engine === "ed25519-sd-v3"`). Constat factuel sur
+          CETTE preuve vérifiée hors ligne, pas une promesse marketing (copy.md
+          §D/§4, `PQ_POLICY` reste `off` par défaut) ; rien n'est affiché pour
+          un bundle v2 — une preuve v2 n'est pas « faible », juste antérieure
+          au post-quantique. */}
+      {bundle.engine === "ed25519-sd-v3" && (
+        <div className="mt-3 rounded-2xl bg-indigo-500/8 px-4 py-3 flex items-start gap-3">
+          <span className="shrink-0 w-8 h-8 rounded-lg grid place-items-center bg-indigo-100 text-indigo-600">
+            <Layers className="w-4 h-4" />
+          </span>
+          <div className="min-w-0 text-sm text-ink-soft">
+            <span className="font-semibold text-ink">Double signature vérifiée</span>{" "}
+            — cette preuve porte deux signatures indépendantes, Ed25519 et
+            post-quantique (ML-DSA-65), toutes deux validées hors ligne dans
+            votre navigateur.
+          </div>
+        </div>
+      )}
+
       {/* Registre public de transparence — vérification 100 % locale, comme le
           reste de cette page : aucun appel réseau. */}
       <TransparencyPanel bundle={bundle} />
@@ -379,7 +410,7 @@ function OfflineVerifiedResult({
         )}
         {revocation.kind === "error" && (
           <div className="rounded-2xl bg-amber-500/10 px-4 py-3 text-sm text-ink-soft">
-            Impossible de joindre le service de révocation. Réessayez plus tard.
+            {revocation.message}
           </div>
         )}
       </div>

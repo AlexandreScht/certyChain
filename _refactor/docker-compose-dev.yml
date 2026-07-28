@@ -36,7 +36,14 @@ services:
       # Gate EUDI local : le seed provisionne la clé ES256 et le smoke joue le
       # flux OpenID4VCI complet. La valeur par défaut produit reste désactivée.
       VC_EXPORT_ENABLED: "true"
-      PUBLIC_API_ORIGIN: http://localhost:4000
+      # 127.0.0.1 et NON localhost : cette valeur est l'origine que le serveur
+      # inscrit dans l'offre OpenID4VCI (`credential_issuer`) et dans
+      # `revocation.source`, donc l'URL que le CLIENT rappelle ensuite. Le
+      # résolveur de Node essaie `::1` avant `127.0.0.1` pour « localhost »,
+      # alors que Docker Desktop ne publie les ports qu'en IPv4 → le smoke
+      # (qui tourne sur l'hôte) échouait en ECONNREFUSED sur tout le flux EUDI.
+      # Une IP littérale rend le Gate C indépendant de l'ordre de résolution.
+      PUBLIC_API_ORIGIN: http://127.0.0.1:4000
       # Journal de transparence : ancrage OTS désactivé en dev/smoke (aucun réseau
       # requis). Les checkpoints restent signés et vérifiables localement.
       OTS_CALENDARS: ""

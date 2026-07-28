@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { logout } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@certifychain/shared/ui";
 import { useCanEmit } from "@/hooks/useSchoolSession";
 import { cn } from "@certifychain/shared/lib/cn";
@@ -86,7 +86,7 @@ export function AppShell({ children }: AppShellProps) {
     try {
       await logout();
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Déconnexion", err.message);
+      toastError("Déconnexion", apiErrorMessage(err));
     } finally {
       router.replace("/ecole/login");
     }

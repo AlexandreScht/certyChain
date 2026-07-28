@@ -6,7 +6,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Mail, Lock, ArrowRight, ShieldCheck, KeyRound } from "lucide-react";
 
 import { adminLogin, adminVerifyTotp } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { Button, Field, Input, useToast } from "@certifychain/shared/ui";
 import { AuthShell } from "@/components/admin";
 
@@ -34,8 +34,9 @@ export default function AdminLoginPage() {
       setSecret(res.secret ?? null);
       setStage("totp");
     } catch (err) {
-      const msg = err instanceof ApiClientError ? err.message : "Une erreur inattendue est survenue.";
-      toastError("Connexion impossible", msg);
+      // A 429 (login rate limit / lockout) now names its concrete delay
+      // instead of a generic message (audit R6).
+      toastError("Connexion impossible", apiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -49,8 +50,7 @@ export default function AdminLoginPage() {
       await adminVerifyTotp(code);
       router.push("/");
     } catch (err) {
-      const msg = err instanceof ApiClientError ? err.message : "Une erreur inattendue est survenue.";
-      toastError("Vérification impossible", msg);
+      toastError("Vérification impossible", apiErrorMessage(err));
       setSubmitting(false);
     }
   }

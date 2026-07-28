@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 import { createShareLink, revokeShareLink } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import type { ShareLinkDTO } from "@certifychain/contract/dto";
 import {
   DISCLOSABLE_FIELDS,
@@ -231,9 +231,9 @@ export function SharePanel({
       setLinks((prev) => [link, ...prev]);
       toast.success("Lien de partage créé", "Vous pouvez maintenant le partager.");
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        toast.error("Création impossible", err.message);
-      }
+      // Never a silent failure — including on a rate limit or an unexpected
+      // exception, previously swallowed here (audit R3).
+      toast.error("Création impossible", apiErrorMessage(err));
     } finally {
       setCreating(false);
     }
@@ -248,9 +248,8 @@ export function SharePanel({
       );
       toast.success("Lien révoqué", "Ce lien n'est plus accessible.");
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        toast.error("Révocation impossible", err.message);
-      }
+      // Never a silent failure (audit R3).
+      toast.error("Révocation impossible", apiErrorMessage(err));
     } finally {
       setRevokingToken(null);
     }

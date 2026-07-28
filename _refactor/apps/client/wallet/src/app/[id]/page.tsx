@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, FileX2, RefreshCw } from "lucide-react";
 
 import { getWalletDiploma, listShareLinks } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { ApiClientError, apiErrorMessage } from "@/lib/api/client";
 import type { ShareLinkDTO, WalletDiplomaDTO } from "@certifychain/contract/dto";
 import {
   Button,
@@ -64,16 +64,13 @@ export default function WalletDiplomaPage({ params }: PageProps): JSX.Element {
     setState({ status: "loading" });
 
     Promise.all([getWalletDiploma(id), listShareLinks(id)])
-      .then(([diploma, shareLinks]) => {
-        if (active) setState({ status: "ready", diploma, shareLinks });
+      .then(([diploma, shareLinkList]) => {
+        if (active) setState({ status: "ready", diploma, shareLinks: shareLinkList.items });
       })
       .catch((err: unknown) => {
         if (!active) return;
         const notFound = err instanceof ApiClientError && err.status === 404;
-        const message =
-          err instanceof ApiClientError
-            ? err.message
-            : "Impossible de charger ce diplôme.";
+        const message = apiErrorMessage(err, "Impossible de charger ce diplôme.");
         setState({ status: "error", message, notFound });
         if (!notFound) toast.error("Chargement impossible", message);
       });

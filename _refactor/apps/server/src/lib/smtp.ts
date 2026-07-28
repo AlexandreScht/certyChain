@@ -7,11 +7,17 @@ import { randomUUID } from "node:crypto";
  *
  * Enough to deliver plain-text transactional mail (OTP codes, notifications) to:
  *   • a dev mail catcher (Mailpit) on plaintext :1025, no auth;
- *   • a basic provider over implicit TLS (:465) with AUTH LOGIN.
+ *   • a basic provider over implicit TLS (:465) with AUTH LOGIN;
+ *   • a basic provider over STARTTLS (:587) with AUTH LOGIN — the client
+ *     connects in the clear, elevates via the `STARTTLS` command once the
+ *     server advertises it in its EHLO capabilities, then re-issues EHLO on
+ *     the now-encrypted channel (RFC 3207 §4.2: the capability list MUST be
+ *     re-discovered post-elevation — several providers only advertise `AUTH`
+ *     there, never in the clear).
  *
  * Kept tiny on purpose so the tsup bundle stays pure-JS (distroless-friendly),
- * matching the project's "no native addons / few deps" stance. STARTTLS and
- * richer providers (Resend REST) are a production concern — see PLAN.md H2.
+ * matching the project's "no native addons / few deps" stance. Richer
+ * providers (Resend REST) are a production concern — see PLAN.md H2.
  */
 
 export interface SmtpConfig {
@@ -19,8 +25,23 @@ export interface SmtpConfig {
   port: number;
   user?: string;
   password?: string;
-  /** Implicit TLS from the first byte (e.g. port 465). */
+  /** Implicit TLS from the first byte (e.g. port 465). Mutually exclusive with `starttls`. */
   secure: boolean;
+  /**
+   * Explicit TLS elevation on an initially plaintext connection (e.g. port
+   * 587). Mutually exclusive with `secure`. If the server does not advertise
+   * `STARTTLS` in its EHLO capabilities, or the elevation itself fails, the
+   * send fails outright — it never falls back to a plaintext `AUTH LOGIN`,
+   * which would put the password on the wire in clear.
+   */
+  starttls?: boolean;
+  /**
+   * Extra trusted CA certificate(s) for the TLS handshake (implicit or
+   * STARTTLS), on top of Node's default trust store — e.g. a private/internal
+   * relay, or a throwaway CA in tests (see `test/helpers/fake-smtp-server.ts`).
+   * Omitted → the public trust store alone, exactly as before this option existed.
+   */
+  ca?: string | Buffer | Array<string | Buffer>;
   /** Header From, e.g. `CertifyChain <no-reply@certifychain.local>`. */
   from: string;
 }
@@ -64,16 +85,33 @@ function findCompleteReply(buf: string): number {
   }
 }
 
+/**
+ * EHLO capability keywords from a full, possibly multi-line reply
+ * (`"250-STARTTLS"` → `"STARTTLS"`). Keywords are case-insensitive per
+ * RFC 5321 — normalized upper-case so callers can compare with a literal.
+ */
+function ehloCapabilities(lines: string[]): Set<string> {
+  return new Set(lines.map((line) => (line.slice(4).split(" ")[0] ?? "").toUpperCase()));
+}
+
 /** Deliver one message over SMTP. Resolves once the server accepts it (250). */
 export async function sendSmtp(cfg: SmtpConfig, msg: SmtpMessage): Promise<void> {
-  const socket: Socket = cfg.secure
-    ? tlsConnect({ host: cfg.host, port: cfg.port, servername: cfg.host })
+  if (cfg.secure && cfg.starttls) {
+    // Belt-and-braces: `config/env.ts` already refuses this combination at
+    // boot, but `sendSmtp` is a standalone lib callable directly (tests,
+    // future callers) — implicit TLS and a later STARTTLS elevation make no
+    // sense together, so fail loudly instead of picking one silently.
+    throw new Error("SMTP config invalide : `secure` (TLS implicite) et `starttls` sont mutuellement exclusifs");
+  }
+
+  let socket: Socket = cfg.secure
+    ? tlsConnect({ host: cfg.host, port: cfg.port, servername: cfg.host, ca: cfg.ca })
     : netConnect({ host: cfg.host, port: cfg.port });
 
   return await new Promise<void>((resolve, reject) => {
     let buffer = "";
     let settled = false;
-    let onReply: ((line: string) => void) | null = null;
+    let onReply: ((reply: { code: number; line: string; lines: string[] }) => void) | null = null;
 
     const fail = (err: Error): void => {
       if (settled) return;
@@ -88,12 +126,6 @@ export async function sendSmtp(cfg: SmtpConfig, msg: SmtpMessage): Promise<void>
       resolve();
     };
 
-    socket.setTimeout(TIMEOUT_MS, () => fail(new Error("SMTP timeout")));
-    socket.on("error", (e: Error) => fail(e));
-    socket.on("close", () => {
-      if (!settled) fail(new Error("SMTP connection closed unexpectedly"));
-    });
-
     function drain(): void {
       if (!onReply) return;
       const end = findCompleteReply(buffer);
@@ -104,17 +136,28 @@ export async function sendSmtp(cfg: SmtpConfig, msg: SmtpMessage): Promise<void>
       const last = lines[lines.length - 1] ?? "";
       const cb = onReply;
       onReply = null;
-      cb(last);
+      cb({ code: Number(last.slice(0, 3)), line: last, lines });
     }
 
-    socket.on("data", (d: Buffer) => {
-      buffer += d.toString("utf8");
-      drain();
-    });
+    // (Re)wires timeout/error/close/data handling onto whichever socket is
+    // currently active. Called once for the initial plaintext/implicit-TLS
+    // socket, and again after a STARTTLS elevation swaps in the TLS socket.
+    const bindSocket = (s: Socket): void => {
+      s.setTimeout(TIMEOUT_MS, () => fail(new Error("SMTP timeout")));
+      s.on("error", (e: Error) => fail(e));
+      s.on("close", () => {
+        if (!settled) fail(new Error("SMTP connection closed unexpectedly"));
+      });
+      s.on("data", (d: Buffer) => {
+        buffer += d.toString("utf8");
+        drain();
+      });
+    };
+    bindSocket(socket);
 
-    const waitReply = (): Promise<{ code: number; line: string }> =>
+    const waitReply = (): Promise<{ code: number; line: string; lines: string[] }> =>
       new Promise((res) => {
-        onReply = (line) => res({ code: Number(line.slice(0, 3)), line });
+        onReply = (reply) => res(reply);
         drain();
       });
 
@@ -134,9 +177,59 @@ export async function sendSmtp(cfg: SmtpConfig, msg: SmtpMessage): Promise<void>
         expect(await waitReply(), [220], "greeting");
 
         write("EHLO certifychain.local");
-        expect(await waitReply(), [250], "EHLO");
+        let ehlo = await waitReply();
+        expect(ehlo, [250], "EHLO");
+
+        if (cfg.starttls) {
+          if (!ehloCapabilities(ehlo.lines).has("STARTTLS")) {
+            // The caller asked for STARTTLS explicitly: the server not
+            // advertising it is a hard failure, never a silent downgrade to
+            // a plaintext AUTH LOGIN (that would leak the password).
+            throw new Error(
+              "SMTP STARTTLS requis mais non annoncé par le serveur dans les capacités EHLO — abandon",
+            );
+          }
+
+          write("STARTTLS");
+          expect(await waitReply(), [220], "STARTTLS");
+
+          // RFC 3207 §5 (the classic "STARTTLS command injection" class of
+          // bug): a compliant server never pipelines anything past the 220 —
+          // any bytes already sitting in `buffer` at this point would be
+          // plaintext smuggled in ahead of the TLS handshake. Refuse them.
+          if (buffer.length > 0) {
+            throw new Error(
+              "SMTP STARTTLS : octets en clair reçus juste après le 220 (indice d'injection) — abandon",
+            );
+          }
+
+          const plainSocket = socket;
+          plainSocket.setTimeout(0); // cancel the plaintext idle timer before handing off the fd
+          plainSocket.removeAllListeners("data");
+          plainSocket.removeAllListeners("error");
+          plainSocket.removeAllListeners("close");
+          plainSocket.removeAllListeners("timeout");
+
+          socket = tlsConnect({ socket: plainSocket, servername: cfg.host, ca: cfg.ca });
+          bindSocket(socket);
+
+          // RFC 3207: the slate is wiped by the upgrade — capabilities MUST
+          // be re-discovered over the encrypted channel. `AUTH` itself often
+          // only shows up here (providers routinely refuse to advertise it
+          // in the clear, precisely so a buggy client can't authenticate
+          // before elevating).
+          write("EHLO certifychain.local");
+          ehlo = await waitReply();
+          expect(ehlo, [250], "EHLO (post-STARTTLS)");
+        }
 
         if (cfg.user && cfg.password) {
+          if (!cfg.secure && !cfg.starttls) {
+            // Defence in depth: AUTH LOGIN carries the password base64-encoded
+            // — i.e. in the clear — over the wire. Refuse rather than leak it
+            // even if a caller mis-set `secure`/`starttls`.
+            throw new Error("SMTP AUTH refusé sur un canal non chiffré (ni `secure` ni `starttls`)");
+          }
           write("AUTH LOGIN");
           expect(await waitReply(), [334], "AUTH");
           write(Buffer.from(cfg.user, "utf8").toString("base64"));

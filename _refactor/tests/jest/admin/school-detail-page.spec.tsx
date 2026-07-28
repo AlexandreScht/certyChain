@@ -53,6 +53,11 @@ jest.mock(
   "@/lib/api/client",
   () => ({
     ApiClientError: class ApiClientError extends Error {},
+    // Minimal stand-in matching the real `apiErrorMessage` contract closely
+    // enough for this page: real ApiClientError → its message, anything else
+    // → a generic fallback (never a raw exception).
+    apiErrorMessage: (err: unknown, fallback = "Une erreur inattendue est survenue.") =>
+      err instanceof Error ? err.message : fallback,
   }),
   { virtual: true },
 );

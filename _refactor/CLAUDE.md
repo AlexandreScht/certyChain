@@ -27,24 +27,35 @@ atomique) → preuve liée au nonce → vérification signature **et** certifica
 ⚠️ **Phase 2 = PAS de ZKP.** SnarkJS/Groth16 a été **abandonné** le 2026-07-12 (achète de la
 confidentialité, pas de la sécurité ; BN254 ≈ 100–110 bits < Ed25519 ; preuves malléables ; trusted
 setup ; ~96 % des vulns SNARK = circuits sous-contraints). La divulgation sélective s'obtient par
-**hachés salés (SD-JWT, RFC 9901)** en gardant Ed25519 → moteur **`ed25519-sd-v2`**. Le socle V2
-(divulgation sélective + vérificateur navigateur, clés hors-base KMS, journal de transparence,
-post-quantique ML-DSA) est spécifié dans **[`v2.md`](./v2.md)** ; l'ADR-0001 reste valable pour la
-Phase 1 mais sa Phase 2 est *superseded*.
+**hachés salés (SD-JWT, RFC 9901)** en gardant Ed25519 → moteurs **`ed25519-sd-v2`** (divulgation
+sélective, V1) et **`ed25519-sd-v3`** (même mécanique + signature hybride **ET** post-quantique
+ML-DSA-65/FIPS 204, V4 — jamais « OU », voir `crypto/ml-dsa.ts` et l'ADR
+[`0006-post-quantum-hybrid.md`](./docs/architecture/decisions/0006-post-quantum-hybrid.md)). Le
+socle V2 (divulgation sélective + vérificateur navigateur, clés hors-base KMS, journal de
+transparence, post-quantique ML-DSA) est spécifié dans **[`v2.md`](./v2.md)** — **V1 à V4 sont
+maintenant tous livrés** (détail : `PLAN.md` §3) ; l'ADR-0001 reste valable pour la Phase 1 mais sa
+Phase 2 est *superseded*.
 **Ne jamais écrire « ZKP », « Groth16 » ou « zero-knowledge » dans la copie produit** — le code ne
 l'exécute pas (règle : ne nommer que des technos réellement implémentées, cf. `v2.md` §5).
 
-🚨 **VERROU DE MISE EN LIGNE (décision du 2026-07-12).** La copie des fronts a été alignée sur le
+🚨 **VERROU DE MISE EN LIGNE (posé le 2026-07-12).** La copie des fronts a été alignée sur le
 produit **final** (voir [`copy.md`](./copy.md)) : elle annonce déjà la vérification **dans le
 navigateur** + le **choix des champs par l'élève** (V1), le **coffre matériel** des clés (V2), le
 **registre public ancré dans Bitcoin** (V3), le **post-quantique** (V4), l'**accrochage CDC** (F1)
-et l'**export EUDI** (F2). **F1/F2 et V1 (divulgation sélective `ed25519-sd-v2` + vérificateur
-navigateur, 2026-07-13) sont implémentées — Gate C Docker 64/64 ; V2–V4 ne sont pas encore
-implémentées.**
-⇒ **NE PAS DÉPLOYER PUBLIQUEMENT ni ouvrir les paiements avant V2–V4.**
-C'est assumé : le produit ne sort qu'une fois les technos en place. Si le calendrier change et
-qu'une mise en ligne anticipée devient nécessaire, **il faut d'abord rétrograder la copie** sur les
-lignes `[LIVE]` de `copy.md` — sinon on vend une promesse non tenue (le piège exact du « ZKP »).
+et l'**export EUDI** (F2).
+
+**État factuel (2026-07-28) : F1, F2, V1, V2, V3 et V4 sont maintenant toutes implémentées —
+Gate C Docker 71/71, 0 échec** (socle 45 + CDC 7 + EUDI 8 + divulgation sélective V1 5 + journal de
+transparence V3 3 + post-quantique hybride V4 3 ; détail des sessions dans `PLAN.md` §3). La
+condition technique posée le 2026-07-12 (« pas avant V2–V4 ») est donc remplie.
+
+⇒ **La levée effective du verrou (mise en ligne publique, ouverture des paiements) reste EN
+ATTENTE d'une décision explicite de l'utilisateur — ce n'est pas une décision que cet agent (ni
+aucun agent) prend de sa propre initiative.** Rien dans ce commit ne doit être lu comme une
+autorisation de déployer. Si/quand l'utilisateur décide de lever le verrou, ou si le calendrier
+impose une sortie anticipée avant que la décision ne soit prise, **il faut d'abord rétrograder la
+copie** sur les lignes `[LIVE]` de `copy.md` dans le second cas — sinon on vend une promesse non
+tenue (le piège exact du « ZKP »).
 
 ## 2. Stack (verrouillée)
 
@@ -57,7 +68,7 @@ lignes `[LIVE]` de `copy.md` — sinon on vend une promesse non tenue (le piège
 | Validation | **Zod** — contrat partagé `packages/contract` | serveur = source de vérité |
 | DB / ORM | **PostgreSQL + Drizzle** | migrations SQL manuscrites `apps/server/drizzle/` (jamais `db:generate`) |
 | Auth | JWT (jose) cookies httpOnly · **scrypt** (`node:crypto`, mdp admins) · OTP email (élèves) · **MFA TOTP** (écoles + admins) | réalms cookies isolés `cc_*` / `cc_admin_*` |
-| Crypto | Ed25519 + nonce, moteurs **par diplôme** via `engineFor(proofVersion)` : `ed25519-nonce-v1` (legacy) · `ed25519-sd-v2` (divulgation sélective RFC 9901, **V1 livré 2026-07-13**) · secrets AES-256-GCM (`KeyVault`) · vérification unique partagée `packages/shared/src/crypto/verify-bundle.ts` (serveur + navigateur) | **pas** Groth16 ([`v2.md`](./v2.md)) |
+| Crypto | Ed25519 + nonce, moteurs **par diplôme** via `engineFor(proofVersion)` : `ed25519-nonce-v1` (legacy) · `ed25519-sd-v2` (divulgation sélective RFC 9901, V1) · `ed25519-sd-v3` (même mécanique + signature hybride **ET** ML-DSA-65/FIPS 204 via `@noble/post-quantum`, V4, `PQ_POLICY` défaut `require` — `crypto/ml-dsa.ts`) · secrets AES-256-GCM (`KeyVault`) · racines de confiance **épinglées côté config** serveur+navigateur (`crypto/trusted-roots.ts`, ADR-0007 — jamais lues dans le bundle vérifié) · vérification unique partagée `packages/shared/src/crypto/verify-bundle.ts` (serveur + navigateur) | **pas** Groth16 ([`v2.md`](./v2.md)) |
 | Infra | Docker multi-stage **distroless non-root**, compose durci | 1 compose racine + 1 compose **par app cliente** |
 | Package manager | **pnpm 9** (workspace) | membres : `apps/client/*`, `apps/server`, `packages/*` |
 | Admin & IA | SIRENE/INSEE (vérité SIRET) + Gemini (vérificateur conditionnel) | dégradation propre sans clés |
@@ -118,17 +129,26 @@ distroless non-root, `cap_drop: ALL`, rootfs read-only, DB sur réseau interne n
 ## 6. Commandes (depuis la racine du workspace)
 
 ```bash
-# ⚠️ Toolchain locale : node n'est PAS sur le PATH → fnm + corepack (pnpm@9.12.0 pinné).
-#    PowerShell :  $env:PATH = "$env:APPDATA\fnm\node-versions\v24.16.0\installation;" + $env:PATH
-#    Git Bash — piège : le shim corepack y échoue AVEC exit 0 → utiliser PowerShell (cf. PROGRESS.md).
+# ⚠️ Toolchain locale (vérifié sur CETTE machine) : node v22.12.0 via nvm4w (C:\nvm4w\nodejs),
+#    déjà sur le PATH — pas besoin de bricoler le PATH pour node. corepack reste nécessaire pour
+#    épingler pnpm@9.12.0 (le pnpm nu peut résoudre une autre version selon l'environnement).
+#    Git Bash — piège persistant : le shim corepack y échoue AVEC exit 0 (faux verts) → toujours
+#    lancer les commandes pnpm/corepack depuis PowerShell (cf. PROGRESS.md).
 corepack pnpm install
 
 pnpm dev                # stack:dev = web + wallet + admin + api en parallèle
 pnpm web:dev | wallet:dev | admin:dev | server:dev
 pnpm build | lint | typecheck                 # -r sur tout le workspace
-pnpm test               # 181 tests node:test (serveur)
-pnpm test:jest          # 326 tests Jest (36 suites, 5 projets)
+pnpm test               # tests node:test (serveur) — 300/300, 74 suites
+pnpm test:jest          # tests Jest — 429/429, 51 suites
 pnpm db:migrate | db:seed | db:seed:admin     # scripts serveur (--env-file=../../.env)
+pnpm --filter @certifychain/server keys:root       # clé PKI racine Ed25519 (une fois, hors repo)
+pnpm --filter @certifychain/server keys:root:pq    # clé PKI racine ML-DSA-65 (requis dès que PQ_POLICY≠off, défaut)
+pnpm --filter @certifychain/server keys:vc         # ⚠️ clé émettrice VC (SD-JWT VC/EUDI) EN BASE,
+                                                    #    PAS en variable d'env — son absence fait
+                                                    #    échouer tout /wallet/*/eudi-offer par un
+                                                    #    404 "Export EUDI indisponible" sans autre
+                                                    #    indice ; --rotate pour tourner la clé.
 
 # Docker — stack PROD durcie (db + api + 3 fronts)
 docker compose up --build
@@ -137,7 +157,12 @@ docker compose -f docker-compose.yml -f docker-compose-dev.yml up --build
 # Déploiement indépendant d'un front (compose par app, contexte ../../..)
 docker compose -f apps/client/web/docker-compose.yml up --build
 
-# Smoke E2E (64 checks : socle 44 + CDC 7 + EUDI 8 + divulgation sélective V1 5)
+# Smoke E2E (71 checks, 0 échec — ventilation vérifiée dans smoke.ts, pas recopiée à l'aveugle :
+#   socle 45 [santé/pages 6, vérif. publique 5, portail école 6, émission→claim→partage→vérif. 18,
+#   login OTP élève 6, portail admin 4] + CDC 7 + EUDI 8 + divulgation sélective V1 5 +
+#   journal de transparence V3 3 + post-quantique hybride V4 3 [1 check inconditionnel +
+#   2 conditionnés à PQ_POLICY≠off — désormais TOUJOURS exécutés puisque "require" est le défaut
+#   depuis 2026-07-28])
 docker compose -f docker-compose.yml -f docker-compose-dev.yml up -d
 pnpm db:seed && pnpm smoke
 

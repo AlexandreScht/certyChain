@@ -38,4 +38,6 @@ export const AUDIT_LABELS: Record<string, string> = {
   vc_credential_issued: "Diplôme EUDI émis",
   transparency_report: "Signalement au journal de transparence",
   school_unfrozen: "Émissions dégelées",
+  pq_degraded: "Diplôme émis sans signature post-quantique",
+  refresh_reuse_detected: "Vol de session détecté (famille de jetons révoquée)",
 };

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import type { ProofBundleDTO } from "@certifychain/contract/dto";
-import { verifyProofBundle } from "@certifychain/shared/crypto/verify-bundle";
+import { verifyProofBundle, type TrustedRoots } from "@certifychain/shared/crypto/verify-bundle";
 import { makeDisclosure, digestOf } from "../../src/crypto/disclosures";
 import { hashSdPayloadV2 } from "../../src/crypto/hashing";
 import {
@@ -22,6 +22,7 @@ import {
 import {
   ed25519NonceEngine,
   ed25519SdEngine,
+  ed25519SdV3Engine,
   engineFor,
 } from "../../src/crypto/proof-engine";
 import { buildSdV2Emission, type SdEmissionFields } from "../../src/crypto/sd-emission";
@@ -31,6 +32,12 @@ import { buildSdV2Emission, type SdEmissionFields } from "../../src/crypto/sd-em
 const DIPLOMA_ID = "22222222-2222-4222-8222-222222222222";
 const SCHOOL_ID = "11111111-1111-4111-8111-111111111111";
 const CERT_ISSUED_AT = "2026-07-01";
+
+// Root pinning (audit 2026-07-27): every fixture below chains to the REAL
+// env-configured CertifyChain root (via `certifychainRootPublicKeyPem()` /
+// `issueSchoolCertificate`), so this is the trust anchor every call under
+// test must supply — a bundle's own `root.publicKey` is never trusted alone.
+const TRUSTED_ROOTS: TrustedRoots = { ed25519: [certifychainRootPublicKeyPem()], mlDsa65: [] };
 
 // Distinctive values so the substring-leak test cannot false-negative.
 const FIELDS: SdEmissionFields = {
@@ -110,7 +117,7 @@ describe("ed25519-sd-v2 — emission output", () => {
 describe("ed25519-sd-v2 — verifyProofBundle (shared implementation)", () => {
   it("accepts a genuine bundle and returns disclosed + hidden count", async () => {
     const { bundle } = buildFixture(["holderName", "programTitle"]);
-    const outcome = await verifyProofBundle(bundle);
+    const outcome = await verifyProofBundle(bundle, TRUSTED_ROOTS);
     assert.equal(outcome.ok, true);
     if (outcome.ok) {
       assert.deepEqual(outcome.disclosed, {
@@ -124,14 +131,14 @@ describe("ed25519-sd-v2 — verifyProofBundle (shared implementation)", () => {
   it("rejects a modified disclosure value", async () => {
     const { bundle } = buildFixture(["holderName"]);
     bundle.disclosures = [makeDisclosure("holderName", "Eve L'Usurpatrice")];
-    const outcome = await verifyProofBundle(bundle);
+    const outcome = await verifyProofBundle(bundle, TRUSTED_ROOTS);
     assert.equal(outcome.ok, false);
   });
 
   it("rejects a disclosure whose digest is NOT in _sd (invented field)", async () => {
     const { bundle } = buildFixture(["holderName"]);
     bundle.disclosures.push(makeDisclosure("bogusField", "anything"));
-    assert.equal((await verifyProofBundle(bundle)).ok, false);
+    assert.equal((await verifyProofBundle(bundle, TRUSTED_ROOTS)).ok, false);
   });
 
   it("rejects two disclosures bearing the same name (anti-substitution)", async () => {
@@ -165,7 +172,7 @@ describe("ed25519-sd-v2 — verifyProofBundle (shared implementation)", () => {
       root: { publicKey: certifychainRootPublicKeyPem() },
       revocation: { checkedAt: new Date().toISOString(), status: "active", source: "x" },
     };
-    const outcome = await verifyProofBundle(bundle);
+    const outcome = await verifyProofBundle(bundle, TRUSTED_ROOTS);
     assert.equal(outcome.ok, false);
     if (!outcome.ok) assert.match(outcome.reason, /same field/);
   });
@@ -176,14 +183,14 @@ describe("ed25519-sd-v2 — verifyProofBundle (shared implementation)", () => {
       emission.disclosureByField.holderName,
       emission.disclosureByField.holderName,
     ];
-    assert.equal((await verifyProofBundle(bundle)).ok, false);
+    assert.equal((await verifyProofBundle(bundle, TRUSTED_ROOTS)).ok, false);
   });
 
   it("rejects a signature from ANOTHER school", async () => {
     const { bundle, emission } = buildFixture(["holderName"]);
     const { privateKey: foreign } = generateEd25519KeyPair();
     bundle.signature = signDiplomaHash(foreign, emission.payloadHash);
-    assert.equal((await verifyProofBundle(bundle)).ok, false);
+    assert.equal((await verifyProofBundle(bundle, TRUSTED_ROOTS)).ok, false);
   });
 
   it("rejects a certificate from another school glued onto the bundle", async () => {
@@ -195,7 +202,7 @@ describe("ed25519-sd-v2 — verifyProofBundle (shared implementation)", () => {
       name: "École SD Test",
       issuedAt: CERT_ISSUED_AT,
     });
-    const outcome = await verifyProofBundle(bundle);
+    const outcome = await verifyProofBundle(bundle, TRUSTED_ROOTS);
     assert.equal(outcome.ok, false);
     if (!outcome.ok) assert.match(outcome.reason, /root/);
   });
@@ -203,7 +210,7 @@ describe("ed25519-sd-v2 — verifyProofBundle (shared implementation)", () => {
   it("rejects payload.schoolId ≠ school.id (payload re-glued on another cert)", async () => {
     const { bundle } = buildFixture(["holderName"]);
     bundle.payload = { ...bundle.payload, schoolId: "99999999-9999-4999-8999-999999999999" };
-    const outcome = await verifyProofBundle(bundle);
+    const outcome = await verifyProofBundle(bundle, TRUSTED_ROOTS);
     assert.equal(outcome.ok, false);
     if (!outcome.ok) assert.match(outcome.reason, /schoolId/);
   });
@@ -211,10 +218,10 @@ describe("ed25519-sd-v2 — verifyProofBundle (shared implementation)", () => {
   it("rejects an unknown payload version or hash algorithm", async () => {
     const { bundle: b1 } = buildFixture([]);
     b1.payload = { ...b1.payload, v: "sd-v3" as "sd-v2" };
-    assert.equal((await verifyProofBundle(b1)).ok, false);
+    assert.equal((await verifyProofBundle(b1, TRUSTED_ROOTS)).ok, false);
     const { bundle: b2 } = buildFixture([]);
     b2.payload = { ...b2.payload, h: "sha-512" as "sha-256" };
-    assert.equal((await verifyProofBundle(b2)).ok, false);
+    assert.equal((await verifyProofBundle(b2, TRUSTED_ROOTS)).ok, false);
   });
 
   it("rejects a tampered _sd list (signature no longer covers it)", async () => {
@@ -222,7 +229,7 @@ describe("ed25519-sd-v2 — verifyProofBundle (shared implementation)", () => {
     const sd = [...bundle.payload._sd];
     sd[0] = digestOf(makeDisclosure("mention", "TB"));
     bundle.payload = { ...bundle.payload, _sd: sd.sort() };
-    assert.equal((await verifyProofBundle(bundle)).ok, false);
+    assert.equal((await verifyProofBundle(bundle, TRUSTED_ROOTS)).ok, false);
   });
 });
 
@@ -230,8 +237,18 @@ describe("non-régression v1 — the nonce engine did NOT move (v2.md §V1-7.3)"
   it("engineFor resolves per diploma version", () => {
     assert.equal(engineFor("v1"), ed25519NonceEngine);
     assert.equal(engineFor("v2"), ed25519SdEngine);
+    assert.equal(engineFor("v3"), ed25519SdV3Engine);
     assert.equal(engineFor("v1").id, "ed25519-nonce-v1");
     assert.equal(engineFor("v2").id, "ed25519-sd-v2");
+    // Le moteur rapporté ne doit pas mentir sur la version réelle de la preuve :
+    // un diplôme v3 est annoncé "ed25519-sd-v3" dans la réponse /verify ET dans
+    // la métadonnée d'audit durable, en accord avec `bundle.engine`.
+    assert.equal(engineFor("v3").id, "ed25519-sd-v3");
+  });
+
+  it("le moteur v3 garde la mécanique de nonce de v2 (transport inchangé)", () => {
+    const input = { nonce: "n0nce", holderSecret: "s", signatureB64: "sig" };
+    assert.equal(ed25519SdV3Engine.buildProof(input), ed25519SdEngine.buildProof(input));
   });
 
   it("a v1 diploma verifies exactly as before through engineFor('v1')", () => {
@@ -279,7 +296,7 @@ describe("fuite par sous-chaîne (v2.md §V1-7.4)", () => {
     const { bundle } = buildFixture(["programTitle"]);
     assert.equal(bundle.disclosures.length, 1);
 
-    const outcome = await verifyProofBundle(bundle);
+    const outcome = await verifyProofBundle(bundle, TRUSTED_ROOTS);
     assert.equal(outcome.ok, true);
     if (outcome.ok) assert.equal(outcome.hidden, 6);
 

@@ -5,6 +5,8 @@ import type { CreateDiplomaInput } from "@certifychain/contract/schemas";
 import type { DiplomaDTO } from "@certifychain/contract/dto";
 import {
   buildSdV2Emission,
+  buildSdV3Emission,
+  envelopePqSigner,
   keyVault,
   resolveSchoolSigner,
   type DiplomaPayload,
@@ -23,6 +25,7 @@ import { uuid, urlToken } from "../../lib/ids";
 import { sendDiplomaClaimEmail, sendDiplomaNotification } from "../../lib/mailer";
 import { logger } from "../../lib/logger";
 import { recordAudit } from "../audit/audit.service";
+import { ensureSchoolPqMaterial } from "../schools/schools.service";
 import { buildIssuanceLeaf } from "../transparency/merkle";
 
 /** Maps a diploma row to its public DTO. */
@@ -96,11 +99,46 @@ export async function issueDiploma(
     externalId: input.externalId ?? null,
   };
 
-  // ── ed25519-sd-v2 emission (v2.md §V1-4) ────────────────────────────────
+  // ── V4 — post-quantum hybrid gate (v2.md §V4-1) ─────────────────────────
+  // `PQ_POLICY` is applied ONLY here, at emission — never at verification
+  // (packages/shared is policy-blind by design: it deduces the hybrid
+  // requirement from `payload.v` alone, so a diploma's proof_version, once
+  // written, verifies exactly the same forever regardless of a LATER policy
+  // change). "off" never touches PQ material.
+  //
+  // "dual-sign" is the ROLLOUT rung ("signe les deux, n'exige que Ed25519"):
+  // it must never turn a PQ hiccup into a refused issuance, otherwise it is as
+  // risky as "require" and the three-rung ladder collapses to two. So EVERY PQ
+  // step is tolerant here — minting the school's ML-DSA-65 key AND signing with
+  // it — and a failure at either step falls back to a freshly built v2 emission
+  // for THIS diploma. "require" has zero tolerance: the same failures abort the
+  // emission rather than ever committing a non-v3 proof.
+  //
+  // ⚠️ That fallback is IRREVERSIBLE (v2.md §V4-0): a diploma emitted without a
+  // PQ signature can never be re-signed — the school's key may be gone, and its
+  // consent with it. A `logger.error` line is therefore not enough (logs rotate,
+  // and nobody diffs them against the diploma table). The degradation is also
+  // written to the `audit` table as `pq_degraded`, right next to the issuance
+  // entry and only once the diploma has actually COMMITTED, so an operator can
+  // answer "which diplomas did we emit unprotected, and why" years later.
+  let pq: { ref: string; publicKeyPq: string; certificatePq: string } | null = null;
+  let pqDegradation: { stage: "provision" | "sign"; error: string } | null = null;
+  if (env.PQ_POLICY !== "off") {
+    try {
+      pq = await ensureSchoolPqMaterial(school, database);
+    } catch (e) {
+      if (env.PQ_POLICY === "require") throw e;
+      pqDegradation = { stage: "provision", error: String(e) };
+      logger.error("diploma.pq_provision_failed", { error: String(e), schoolId });
+    }
+  }
+
+  // ── ed25519-sd-v2 / ed25519-sd-v3 emission (v2.md §V1-4 / §V4-1) ────────
   // The pure core (crypto/sd-emission.ts) builds ALL 7 disclosures — including
   // null-valued fields — and a lexicographically SORTED `_sd`. Salts stay secret
-  // at rest: the dict is envelope-encrypted before persisting.
-  const { disclosureByField, payloadHash } = buildSdV2Emission(diplomaId, schoolId, {
+  // at rest: the dict is envelope-encrypted before persisting. v3 is v2 PLUS a
+  // second, ML-DSA-65 signature over the SAME payload hash — hybrid "AND".
+  const fields = {
     holderName: payload.holderName,
     holderEmail: payload.holderEmail,
     programTitle: payload.programTitle,
@@ -108,7 +146,29 @@ export async function issueDiploma(
     rncp: payload.rncp,
     issuedAt: payload.issuedAt,
     externalId: payload.externalId,
-  });
+  };
+  let emission = pq
+    ? buildSdV3Emission(diplomaId, schoolId, fields)
+    : buildSdV2Emission(diplomaId, schoolId, fields);
+
+  // PQ signature FIRST: the v3 payload hash commits to `v: "sd-v3"`, so a v2
+  // fallback cannot reuse it — the emission has to be rebuilt, and the single
+  // Ed25519 signature below must then cover the hash we actually persist.
+  let signaturePq: string | null = null;
+  if (pq) {
+    try {
+      signaturePq = await envelopePqSigner.signPq(pq.ref, Buffer.from(emission.payloadHash, "hex"));
+    } catch (e) {
+      if (env.PQ_POLICY === "require") throw e;
+      pqDegradation = { stage: "sign", error: String(e) };
+      logger.error("diploma.pq_sign_failed", { error: String(e), schoolId });
+      pq = null;
+      emission = buildSdV2Emission(diplomaId, schoolId, fields);
+    }
+  }
+  const useV3 = pq !== null;
+
+  const { disclosureByField, payloadHash } = emission;
   const signature = await signing.signer.sign(signing.ref, Buffer.from(payloadHash, "hex"));
   const disclosuresEncrypted = keyVault.encrypt(JSON.stringify(disclosureByField));
 
@@ -189,7 +249,8 @@ export async function issueDiploma(
           externalId: payload.externalId,
           payloadHash,
           signature,
-          proofVersion: "v2",
+          signaturePq,
+          proofVersion: useV3 ? "v3" : "v2",
           disclosuresEncrypted,
           // Kept as-is: the holder secret binds the nonce proof, orthogonal to SD.
           encryptedHolderSecret: keyVault.encrypt(urlToken(32)),
@@ -231,6 +292,28 @@ export async function issueDiploma(
     diplomaId,
     metadata: { programTitle: payload.programTitle },
   });
+
+  // Durable trace of an IRREVERSIBLE degradation (v2.md §V4-0): this diploma
+  // committed as v2 while the policy asked for a hybrid v3, and it can never be
+  // re-signed. Recorded only now, after the transaction committed, so the entry
+  // can never point at a diploma that was rolled back. `recordAudit` swallows
+  // its own failures — a broken audit write must not undo a valid issuance.
+  if (pqDegradation) {
+    await recordAudit(
+      {
+        type: "pq_degraded",
+        schoolId,
+        diplomaId,
+        metadata: {
+          policy: env.PQ_POLICY,
+          stage: pqDegradation.stage,
+          error: pqDegradation.error,
+          emittedProofVersion: row.proofVersion,
+        },
+      },
+      { db: database },
+    );
+  }
 
   // Fire-and-forget holder notification; a mail failure must not fail issuance.
   // The student wallet is now its own app/origin (root path), not /wallet on the web.

@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import { getBillingState, startCheckout, startBillingPortal } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { Button, Card, PageHeader, Skeleton, useToast } from "@certifychain/shared/ui";
 import { FadeIn } from "@/components/school";
 import { cn } from "@certifychain/shared/lib/cn";
@@ -51,7 +51,7 @@ export default function BillingSettingsPage() {
     try {
       setState(await getBillingState());
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Chargement impossible", err.message);
+      toastError("Chargement impossible", apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -86,7 +86,7 @@ export default function BillingSettingsPage() {
       const { url } = await startBillingPortal();
       window.location.href = url;
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Action impossible", err.message);
+      toastError("Action impossible", apiErrorMessage(err));
       setBusy(null);
     }
   }
@@ -182,7 +182,7 @@ export default function BillingSettingsPage() {
                     const { url } = await startCheckout({ plan: planId });
                     window.location.href = url;
                   } catch (err) {
-                    if (err instanceof ApiClientError) toastError("Abonnement impossible", err.message);
+                    toastError("Abonnement impossible", apiErrorMessage(err));
                     setBusy(null);
                   }
                 }}

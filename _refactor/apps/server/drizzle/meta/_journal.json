@@ -120,6 +120,34 @@
       "when": 1750001500000,
       "tag": "0016_transparency_log",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1750001600000,
+      "tag": "0017_post_quantum",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1750001700000,
+      "tag": "0018_pq_degraded_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1750001800000,
+      "tag": "0019_refresh_families",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1750001900000,
+      "tag": "0020_share_links_pagination",
+      "breakpoints": true
     }
   ]
 }

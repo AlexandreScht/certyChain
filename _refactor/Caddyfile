@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CertifyChain — reverse-proxy TLS (P1, docs/architecture.md §12.2)
+#
+# Utilisé UNIQUEMENT par le service `caddy` du `docker-compose.yml` racine,
+# profil compose optionnel "proxy" (`docker compose --profile proxy up`).
+# Termine TLS pour l'API et lui transmet la requête en clair sur le réseau
+# Docker interne `frontend` — la même topologie qu'un reverse-proxy nginx/
+# Traefik classique, mais avec le certificat Let's Encrypt géré automatiquement
+# (ACME HTTP-01 sur :80, renouvellement automatique, zéro config manuelle).
+#
+# Variables lues depuis l'environnement du conteneur `caddy` (voir
+# docker-compose.yml) :
+#   API_DOMAIN        nom de domaine public de l'API (ex: api.example.com)
+#   CADDY_ACME_EMAIL  contact Let's Encrypt (alertes d'expiration/abus)
+# ─────────────────────────────────────────────────────────────────────────────
+
+{
+	email {$CADDY_ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	# TRUST_PROXY=true côté API (docker-compose.yml) : Caddy ajoute déjà
+	# X-Forwarded-For/X-Forwarded-Proto par défaut sur `reverse_proxy` — ne PAS
+	# les désactiver, `apps/server/src/lib/net.ts` (clientIp) en dépend pour
+	# retrouver l'IP réelle du visiteur derrière ce proxy.
+	reverse_proxy server:4000
+
+	encode gzip
+
+	# En-têtes de sécurité minimaux côté transport — les en-têtes applicatifs
+	# (CSP, CORS…) restent posés par l'API elle-même (apps/server/src/middleware).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+}
+
+# Pour proxier aussi les 3 fronts derrière ce même Caddy (au lieu de leurs
+# ports publiés directement, cf. docker-compose.yml), dupliquer le bloc
+# ci-dessus par domaine — par exemple :
+#
+#   {$WEB_DOMAIN} {
+#   	reverse_proxy web:3000
+#   }
+#   {$WALLET_DOMAIN} {
+#   	reverse_proxy wallet:3001
+#   }
+#
+# (non activé par défaut : ce chantier P1 ne couvre que l'API, cf. PLAN.md)

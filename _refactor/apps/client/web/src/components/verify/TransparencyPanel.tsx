@@ -7,6 +7,7 @@ import {
   verifyTransparency,
   type TransparencyOutcome,
 } from "@certifychain/shared/crypto/verify-transparency";
+import { TRUSTED_ROOTS } from "@/lib/trusted-roots";
 
 /** Date + heure locales FR d'un timestamp ISO (repli : la chaîne brute). */
 function formatDateTime(iso: string): string {
@@ -46,7 +47,7 @@ export function TransparencyPanel({ bundle }: TransparencyPanelProps): JSX.Eleme
   useEffect(() => {
     if (!transparency) return;
     let cancelled = false;
-    void verifyTransparency(bundle).then((result) => {
+    void verifyTransparency(bundle, TRUSTED_ROOTS).then((result) => {
       if (!cancelled) setOutcome(result);
     });
     return () => {

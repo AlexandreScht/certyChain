@@ -1,3 +1,4 @@
+import { mlDsaKeygen, mlDsaSign } from "@certifychain/shared/crypto/ml-dsa";
 import { env } from "../config/env";
 import { keyVault } from "./envelope";
 import { generateEd25519KeyPair, signEd25519 } from "./keys";
@@ -50,6 +51,46 @@ class EnvelopeSigner implements Signer {
 
 /** Process-wide singleton — the envelope signer is stateless (master key in env). */
 export const envelopeSigner: Signer = new EnvelopeSigner();
+
+/* ── PqSigner — the school's ML-DSA-65 (post-quantum) key, ALWAYS envelope ───
+ *
+ * A SEPARATE seam from `Signer` (v2.md §V4-1), not a variant of it: a school's
+ * classical (Ed25519) key and its post-quantum (ML-DSA-65) key can each be
+ * `envelope` or, for Ed25519 only, `kms` — but quasi no managed KMS signs
+ * ML-DSA today, so the PQ key stays in `EnvelopeSigner`-style storage
+ * REGARDLESS of `schools.signer_kind` (v2.md §V4-2). This is an accepted,
+ * explicit asymmetry (see ADR-0006): the two keys of a hybrid signature do NOT
+ * share a custody model, and the hybrid "AND" verification rule means the
+ * diploma's overall security is that of its BETTER-guarded key, not its worse.
+ * The private key never leaves this module — same contract as `Signer`. */
+export interface PqSigner {
+  /** Creates the school's ML-DSA-65 key pair. Returns the raw public key
+   *  (base64 — ML-DSA has no PEM/SPKI convention) + an opaque envelope
+   *  reference, stored verbatim in `schools.signer_ref_pq`. */
+  createSchoolPqKey(schoolId: string): Promise<{ publicKeyB64: string; ref: string }>;
+  /** Signs raw bytes with ML-DSA-65. The secret key NEVER reaches the caller. */
+  signPq(ref: string, data: Buffer): Promise<string>; // base64
+}
+
+class EnvelopePqSigner implements PqSigner {
+  async createSchoolPqKey(_schoolId: string): Promise<{ publicKeyB64: string; ref: string }> {
+    const { publicKey, secretKey } = mlDsaKeygen();
+    return {
+      publicKeyB64: Buffer.from(publicKey).toString("base64"),
+      ref: keyVault.encrypt(Buffer.from(secretKey)),
+    };
+  }
+
+  async signPq(ref: string, data: Buffer): Promise<string> {
+    // The raw ML-DSA-65 secret key is decrypted LOCALLY and never returned.
+    const secretKey = keyVault.decrypt(ref);
+    return Buffer.from(mlDsaSign(secretKey, data)).toString("base64");
+  }
+}
+
+/** Process-wide singleton — stateless, same custody model for every school's
+ *  PQ key regardless of that school's Ed25519 `signer_kind`. */
+export const envelopePqSigner: PqSigner = new EnvelopePqSigner();
 
 /* ── KmsSigner — HashiCorp Vault Transit over pure fetch (no SDK: distroless) ── */
 

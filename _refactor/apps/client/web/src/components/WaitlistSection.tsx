@@ -8,7 +8,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { Mail, ArrowRight, CheckCircle2, Building2 } from "lucide-react";
 
 import { joinWaitlist } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 
 if (typeof window !== "undefined") gsap.registerPlugin(ScrollTrigger);
 
@@ -31,11 +31,7 @@ export default function WaitlistSection() {
       await joinWaitlist({ email: value });
       setSubmitted(true);
     } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Une erreur est survenue. Réessayez dans un instant.",
-      );
+      setError(apiErrorMessage(err, "Une erreur est survenue. Réessayez dans un instant."));
     } finally {
       setSubmitting(false);
     }

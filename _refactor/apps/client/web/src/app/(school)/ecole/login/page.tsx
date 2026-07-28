@@ -7,7 +7,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Mail, Lock, ArrowRight, KeyRound } from "lucide-react";
 
 import { loginSchool, verifySchoolTotp } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { Button, Field, Input, useToast } from "@certifychain/shared/ui";
 import { AuthShell } from "@/components/school";
 
@@ -35,8 +35,7 @@ export default function SchoolLoginPage() {
       setSecret(res.secret ?? null);
       setStage("totp");
     } catch (err) {
-      const msg = err instanceof ApiClientError ? err.message : "Une erreur inattendue est survenue.";
-      toastError("Connexion impossible", msg);
+      toastError("Connexion impossible", apiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -50,8 +49,7 @@ export default function SchoolLoginPage() {
       await verifySchoolTotp(code);
       router.push("/ecole/dashboard");
     } catch (err) {
-      const msg = err instanceof ApiClientError ? err.message : "Une erreur inattendue est survenue.";
-      toastError("Vérification impossible", msg);
+      toastError("Vérification impossible", apiErrorMessage(err));
       setSubmitting(false);
     }
   }

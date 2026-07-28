@@ -16,3 +16,4 @@ export const csrfFetch = createCsrfFetch("cc_admin_csrf", {
 export const api = hc<AppType>(API_BASE, { fetch: csrfFetch });
 
 export { API_BASE, ApiClientError, unwrap } from "@certifychain/shared/api/client";
+export { apiErrorMessage } from "@certifychain/shared/api/error-message";

@@ -1,3 +1,4 @@
+import { RETRY_AFTER_HEADERS } from "@certifychain/contract/constants";
 import type { ApiError, ErrorCode } from "@certifychain/contract/errors";
 
 /**
@@ -19,6 +20,13 @@ export class ApiClientError extends Error {
   readonly code: ErrorCode | "network_error" | "unknown";
   readonly status: number;
   readonly details?: unknown;
+  /**
+   * Seconds to wait before retrying, when the server exposed a usable delay on
+   * a 429 (`Retry-After` header, read by {@link unwrap} — see
+   * `apps/server/src/middleware/rate-limit.ts`). `undefined` when no such
+   * delay was present — never a guessed number (R6).
+   */
+  readonly retryAfterSeconds?: number;
 
   constructor(
     message: string,
@@ -26,6 +34,7 @@ export class ApiClientError extends Error {
       code?: ErrorCode | "network_error" | "unknown";
       status?: number;
       details?: unknown;
+      retryAfterSeconds?: number;
     } = {},
   ) {
     super(message);
@@ -33,6 +42,7 @@ export class ApiClientError extends Error {
     this.code = options.code ?? "unknown";
     this.status = options.status ?? 0;
     this.details = options.details;
+    this.retryAfterSeconds = options.retryAfterSeconds;
   }
 }
 
@@ -211,6 +221,33 @@ export interface JsonResponseLike {
   status: number;
   statusText: string;
   text(): Promise<string>;
+  /**
+   * Optional: real `fetch`/hono `ClientResponse` values always carry it; test
+   * doubles may omit it (defensively read via `?.` wherever it matters).
+   */
+  headers?: { get(name: string): string | null };
+}
+
+/**
+ * On a 429, reads the delay (seconds) the server suggests waiting before
+ * retrying. `apps/server/src/middleware/rate-limit.ts` sets `Retry-After`
+ * (delay-seconds) whenever a bucket is actually exhausted, and mirrors the
+ * same value in `RateLimit-Reset` (fallback) — the two names, in that order,
+ * are {@link RETRY_AFTER_HEADERS}, which the API also uses to build its
+ * `Access-Control-Expose-Headers` (without that, a browser hides them all and
+ * this always returns `undefined`). The account-lockout 429 (`auth.routes.ts`,
+ * whose message already spells out the delay in words) sets neither header —
+ * this correctly returns `undefined` there instead of inventing a number.
+ */
+function readRetryAfterSeconds(res: JsonResponseLike): number | undefined {
+  let raw: string | null = null;
+  for (const header of RETRY_AFTER_HEADERS) {
+    raw = res.headers?.get(header) ?? null;
+    if (raw !== null) break;
+  }
+  if (raw === null) return undefined;
+  const seconds = Number(raw);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
 }
 
 /** JSON body of the success (2xx) branch of a typed hono `ClientResponse`. */
@@ -239,6 +276,7 @@ export async function unwrap<R extends JsonResponseLike>(
   const parsed: unknown = text ? safeJson(text) : undefined;
 
   if (!res.ok) {
+    const retryAfterSeconds = res.status === 429 ? readRetryAfterSeconds(res) : undefined;
     if (isApiError(parsed)) {
       throw new ApiClientError(
         firstDetailMessage(parsed.error.details) ?? parsed.error.message,
@@ -246,12 +284,13 @@ export async function unwrap<R extends JsonResponseLike>(
           code: parsed.error.code,
           status: res.status,
           details: parsed.error.details,
+          retryAfterSeconds,
         },
       );
     }
     throw new ApiClientError(
       rawZodIssueMessage(parsed) ?? (res.statusText || "Erreur serveur."),
-      { status: res.status, details: parsed },
+      { status: res.status, details: parsed, retryAfterSeconds },
     );
   }
 

@@ -1,8 +1,8 @@
-import { count, eq, sql } from "drizzle-orm";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
 import type { SchoolDTO, SchoolStatsDTO } from "@certifychain/contract/dto";
 import { env } from "../../config/env";
-import { issueSchoolCertificate, signerFor } from "../../crypto";
-import { db } from "../../db/client";
+import { envelopePqSigner, issueSchoolCertificate, issueSchoolCertificatePq, signerFor } from "../../crypto";
+import { db, type DB } from "../../db/client";
 import { type School, diplomas, schoolAdmins, schools } from "../../db/schema";
 import { fail } from "../../lib/http-error";
 import { countVerifications, recordAudit } from "../audit/audit.service";
@@ -199,4 +199,71 @@ export async function approveSchool(
   if (!updated) throw fail.internal();
   clearVcStatusCache();
   return updated;
+}
+
+/**
+ * Lazily provisions the school's ML-DSA-65 (post-quantum) key pair + root
+ * certificate (v2.md §V4-1), the FIRST time it's needed under `PQ_POLICY !=
+ * "off"`. Idempotent: if the school already carries all three PQ fields,
+ * returns them unchanged (no re-mint). Mints through the `envelopePqSigner`
+ * seam ONLY — the secret key never surfaces here, same invariant as `Signer`.
+ *
+ * Deliberately NOT folded into `approveSchool`: a school approved while
+ * `PQ_POLICY=off` should not carry unused PQ key material, and flipping the
+ * policy later must not require re-approving every existing school — the
+ * first diploma issued under the new policy provisions it on demand instead.
+ */
+export async function ensureSchoolPqMaterial(
+  school: School,
+  database: DB = db,
+): Promise<{ ref: string; publicKeyPq: string; certificatePq: string }> {
+  if (school.publicKeyPq && school.certificatePq && school.signerRefPq) {
+    return {
+      ref: school.signerRefPq,
+      publicKeyPq: school.publicKeyPq,
+      certificatePq: school.certificatePq,
+    };
+  }
+
+  const { publicKeyB64, ref } = await envelopePqSigner.createSchoolPqKey(school.id);
+  // ⚠️ `issuedAt` MUST equal the Ed25519 certificate's `certIssuedAt`
+  // (`schoolRow.approvedAt`, v2.md §V4-1 "same canonical payload"), NOT
+  // "today": `ensureSchoolPqMaterial` mints lazily, often long after
+  // approval, while `verify.routes.ts` reconstructs ONE shared `certIssuedAt`
+  // for BOTH certificates from `approvedAt` alone. Signing with any other
+  // date here would make the PQ certificate permanently unverifiable.
+  if (!school.approvedAt) throw fail.internal();
+  const certificatePq = issueSchoolCertificatePq({
+    schoolId: school.id,
+    publicKey: publicKeyB64,
+    name: school.name,
+    issuedAt: school.approvedAt.toISOString().slice(0, 10),
+  });
+
+  // Conditional write (compare-and-swap via `WHERE ... IS NULL`, no explicit
+  // lock): two concurrent emissions for the SAME school could otherwise both
+  // observe "no PQ key yet" and each mint a DIFFERENT key pair — whichever
+  // UPDATE lands last would silently strand the diploma signed by the OTHER
+  // mint with a signaturePq nobody can ever verify again (the school row
+  // would point at a different public key/certificate than the one that
+  // actually signed it). If we lose this race, discard our mint and adopt
+  // whatever material actually won instead of trusting our own.
+  const won = await database
+    .update(schools)
+    .set({ publicKeyPq: publicKeyB64, certificatePq, signerRefPq: ref })
+    .where(and(eq(schools.id, school.id), isNull(schools.publicKeyPq)))
+    .returning({ id: schools.id });
+
+  if (won.length > 0) {
+    return { ref, publicKeyPq: publicKeyB64, certificatePq };
+  }
+
+  const [fresh] = await database.select().from(schools).where(eq(schools.id, school.id)).limit(1);
+  if (!fresh?.publicKeyPq || !fresh.certificatePq || !fresh.signerRefPq) {
+    // Someone else's concurrent write must have set all three fields
+    // together — this should not happen. Fail closed rather than risk
+    // signing with material the school row doesn't (yet) certify.
+    throw fail.internal();
+  }
+  return { ref: fresh.signerRefPq, publicKeyPq: fresh.publicKeyPq, certificatePq: fresh.certificatePq };
 }

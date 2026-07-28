@@ -4,7 +4,7 @@ import { useEffect, useState, type JSX } from "react";
 import { GraduationCap, Inbox, RefreshCw } from "lucide-react";
 
 import { getWalletDiplomas } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import type { WalletDiplomaDTO } from "@certifychain/contract/dto";
 import {
   Button,
@@ -51,10 +51,7 @@ export default function WalletHomePage(): JSX.Element {
       })
       .catch((err: unknown) => {
         if (!active) return;
-        const message =
-          err instanceof ApiClientError
-            ? err.message
-            : "Impossible de charger vos diplômes.";
+        const message = apiErrorMessage(err, "Impossible de charger vos diplômes.");
         setState({ status: "error", message });
         toast.error("Chargement impossible", message);
       });

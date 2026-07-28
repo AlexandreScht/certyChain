@@ -1,9 +1,9 @@
 import { zValidator } from "../../lib/validator";
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import { RATE_LIMIT, SHARE_LINK } from "../../config/constants";
-import { CreateShareLinkSchema } from "@certifychain/contract/schemas";
+import { CreateShareLinkSchema, ListShareLinksQuerySchema } from "@certifychain/contract/schemas";
 import { db } from "../../db/client";
 import { diplomas, shareLinks } from "../../db/schema";
 import type { AppEnv } from "../../http/types";
@@ -16,6 +16,7 @@ import { recordAudit } from "../audit/audit.service";
 import { createEudiOffer } from "../vc/vc.service";
 import {
   getStudentDiploma,
+  listShareLinksForDiploma,
   listStudentDiplomas,
   ownsDiploma,
   toShareLinkDTO,
@@ -56,19 +57,20 @@ export const walletRoutes = new Hono<AppEnv>()
     },
   )
 
-/** GET /wallet/diplomas/:id/shares — share links for an owned diploma. */
-  .get("/diplomas/:id/shares", zValidator("param", idParamSchema), async (c) => {
-  const { sub } = getAuth(c);
-  const { id } = c.req.valid("param");
-  if (!(await ownsDiploma(id, sub))) throw fail.notFound("Diplôme introuvable");
+/** GET /wallet/diplomas/:id/shares — paginated share links for an owned
+    diploma (R4, audit 2026-07-28 — was unbounded before). */
+  .get(
+  "/diplomas/:id/shares",
+  zValidator("param", idParamSchema),
+  zValidator("query", ListShareLinksQuerySchema),
+  async (c) => {
+    const { sub } = getAuth(c);
+    const { id } = c.req.valid("param");
+    if (!(await ownsDiploma(id, sub))) throw fail.notFound("Diplôme introuvable");
 
-  const rows = await db
-    .select()
-    .from(shareLinks)
-    .where(eq(shareLinks.diplomaId, id))
-    .orderBy(asc(shareLinks.createdAt));
-  return c.json(rows.map(toShareLinkDTO));
-  })
+    return c.json(await listShareLinksForDiploma(id, c.req.valid("query")));
+  },
+  )
 
 /** POST /wallet/diplomas/:id/share — create a share link for an owned diploma. */
   .post(

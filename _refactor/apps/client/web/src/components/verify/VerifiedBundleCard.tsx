@@ -8,6 +8,7 @@ import {
   BadgeCheck,
   Download,
   EyeOff,
+  Layers,
   ShieldCheck,
 } from "lucide-react";
 import { Badge, Button } from "@certifychain/shared/ui";
@@ -170,6 +171,28 @@ export function VerifiedBundleCard({
             {hiddenFieldsLabel(hidden)} par le titulaire.
           </div>
         </div>
+
+        {/* Hybrid post-quantum signature (v2.md §V4-1) — ONLY for a "sd-v3"
+            bundle, whose engine literal is "ed25519-sd-v3". A factual note on
+            THIS verified artifact ("this proof carries two signatures"), not
+            a general marketing promise ("our diplomas are post-quantum") —
+            copy.md §D/§4 bans the latter while `PQ_POLICY` defaults to `off`.
+            Deliberately silent for v2 bundles: a diploma without a PQ
+            signature is not "weak", it simply predates post-quantum — no
+            warning is shown for it (v4-front brief §2.1). */}
+        {bundle.engine === "ed25519-sd-v3" && (
+          <div className="mt-3 rounded-2xl bg-indigo-500/8 px-4 py-3 flex items-start gap-3">
+            <span className="shrink-0 w-8 h-8 rounded-lg grid place-items-center bg-indigo-100 text-indigo-600">
+              <Layers className="w-4 h-4" />
+            </span>
+            <div className="min-w-0 text-sm text-ink-soft">
+              <span className="font-semibold text-ink">Double signature vérifiée</span>{" "}
+              — cette preuve porte deux signatures indépendantes, Ed25519 et
+              post-quantique (ML-DSA-65), toutes deux validées dans votre
+              navigateur.
+            </div>
+          </div>
+        )}
 
         {/* Revocation status — a fact posterior to signing (needed the network) */}
         <div className="mt-3 rounded-2xl neumorph-inset px-4 py-3 flex items-center gap-3">

@@ -16,6 +16,7 @@ import {
   verifyInclusion,
 } from "@certifychain/shared/crypto/merkle";
 import { verifyTransparency } from "@certifychain/shared/crypto/verify-transparency";
+import type { TrustedRoots } from "@certifychain/shared/crypto/trusted-roots";
 
 /* ── Vecteurs figés (feuilles historiques Certificate Transparency) ───────── */
 
@@ -184,6 +185,13 @@ const SCHOOL_ID = "11111111-1111-4111-8111-111111111111";
 const ISSUED_AT = "2025-07-03";
 const CHECKPOINT_AT = "2026-07-14T12:00:00.000Z";
 
+/** Root pinning (audit 2026-07-27): the trust anchor for a test is whatever
+ *  root THIS bundle was actually signed under — `buildTransparentBundle`
+ *  mints a fresh key pair on every call. */
+function rootsOf(bundle: ProofBundleDTO): TrustedRoots {
+  return { ed25519: [bundle.root.publicKey], mlDsa65: [] };
+}
+
 function buildTransparentBundle(discloseIssuedAt: boolean): ProofBundleDTO {
   const root = generateKeyPairSync("ed25519", {
     publicKeyEncoding: { type: "spki", format: "pem" },
@@ -264,7 +272,7 @@ function buildTransparentBundle(discloseIssuedAt: boolean): ProofBundleDTO {
 describe("verifyTransparency en jsdom (fallback @noble : pas de subtle.Ed25519)", () => {
   it("accepte un bundle journalisé authentique → binding 'full'", async () => {
     const bundle = buildTransparentBundle(true);
-    const outcome = await verifyTransparency(bundle);
+    const outcome = await verifyTransparency(bundle, rootsOf(bundle));
     expect(outcome).toEqual({
       ok: true,
       binding: "full",
@@ -274,12 +282,12 @@ describe("verifyTransparency en jsdom (fallback @noble : pas de subtle.Ed25519)"
       otsUpgradedAt: null,
     });
     // Le fallback FORCÉ rend exactement le même verdict.
-    expect(await verifyTransparency(bundle, { forceNoble: true })).toEqual(outcome);
+    expect(await verifyTransparency(bundle, rootsOf(bundle), { forceNoble: true })).toEqual(outcome);
   });
 
   it("binding 'hash-only' quand issuedAt est masqué — aucune valeur masquée exposée", async () => {
     const bundle = buildTransparentBundle(false);
-    const outcome = await verifyTransparency(bundle, { forceNoble: true });
+    const outcome = await verifyTransparency(bundle, rootsOf(bundle), { forceNoble: true });
     expect(outcome.ok).toBe(true);
     if (outcome.ok) expect(outcome.binding).toBe("hash-only");
     expect(JSON.stringify(outcome)).not.toContain(ISSUED_AT);
@@ -289,8 +297,8 @@ describe("verifyTransparency en jsdom (fallback @noble : pas de subtle.Ed25519)"
     const bundle = buildTransparentBundle(true);
     const t = bundle.transparency!;
     t.checkpoint.signature = t.checkpoint.signature.slice(0, -4) + "AAAA";
-    const viaDefault = await verifyTransparency(bundle);
-    const viaNoble = await verifyTransparency(bundle, { forceNoble: true });
+    const viaDefault = await verifyTransparency(bundle, rootsOf(bundle));
+    const viaNoble = await verifyTransparency(bundle, rootsOf(bundle), { forceNoble: true });
     expect(viaDefault.ok).toBe(false);
     expect(viaNoble).toEqual(viaDefault);
   });
@@ -298,7 +306,7 @@ describe("verifyTransparency en jsdom (fallback @noble : pas de subtle.Ed25519)"
   it("rejette un auditPath altéré et une feuille d'un autre diplôme", async () => {
     const tamperedPath = buildTransparentBundle(true);
     tamperedPath.transparency!.auditPath = tamperedPath.transparency!.auditPath.map(flipNibble);
-    expect((await verifyTransparency(tamperedPath)).ok).toBe(false);
+    expect((await verifyTransparency(tamperedPath, rootsOf(tamperedPath))).ok).toBe(false);
 
     // La feuille à l'index 1 est remplacée par celle d'un autre contenu, arbre re-signé…
     const foreignLeaf = buildTransparentBundle(true);
@@ -306,7 +314,7 @@ describe("verifyTransparency en jsdom (fallback @noble : pas de subtle.Ed25519)"
     // …mais SANS re-signer : l'inclusion casse déjà. (Le cas « inclusion valide,
     // binding faux » est couvert côté node:test avec les pièces de prod.)
     foreignLeaf.transparency!.leafHash = other;
-    expect((await verifyTransparency(foreignLeaf)).ok).toBe(false);
+    expect((await verifyTransparency(foreignLeaf, rootsOf(foreignLeaf))).ok).toBe(false);
   });
 });
 
@@ -323,8 +331,8 @@ describe("verifyTransparency — chemin WebCrypto (subtle Ed25519 injecté)", ()
 
   it("vérifie via subtle et rend le même verdict que @noble", async () => {
     const bundle = buildTransparentBundle(true);
-    const viaSubtle = await verifyTransparency(bundle);
-    const viaNoble = await verifyTransparency(bundle, { forceNoble: true });
+    const viaSubtle = await verifyTransparency(bundle, rootsOf(bundle));
+    const viaNoble = await verifyTransparency(bundle, rootsOf(bundle), { forceNoble: true });
     expect(viaSubtle).toEqual({
       ok: true,
       binding: "full",

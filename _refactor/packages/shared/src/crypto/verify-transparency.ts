@@ -1,6 +1,7 @@
 import { sha256 } from "@noble/hashes/sha256";
 import type { ProofBundleDTO } from "@certifychain/contract/dto";
 import { merkleLeafHash, verifyInclusion } from "./merkle";
+import { mlDsaVerify } from "./ml-dsa";
 import {
   b64ToBytes,
   bytesToHex,
@@ -10,6 +11,7 @@ import {
   utf8ToBytes,
   verifyEd25519,
 } from "./primitives";
+import { isTrustedEd25519Root, isTrustedMlDsaRoot, type TrustedRoots } from "./trusted-roots";
 
 /**
  * `verifyTransparency` — the SINGLE implementation of the transparency-log
@@ -22,6 +24,15 @@ import {
  * Pure and framework/serverless-free by contract (CLAUDE.md §3): NO `node:*`,
  * hono or drizzle imports. It says NOTHING about the signature/PKI/disclosure
  * validity of the bundle itself — that is `verifyProofBundle`'s job; run both.
+ *
+ * ── Root pinning (audit 2026-07-27) ────────────────────────────────────────
+ * The checkpoint (STH) is verified against `bundle.root.publicKey` — data
+ * carried by the bundle itself. Exactly like `verifyProofBundle`, this
+ * function takes a MANDATORY `trustedRoots` argument and rejects, BEFORE
+ * checking the checkpoint signature, when that root is not one of the pinned
+ * ones. Same reason, same failure mode, same "no divergence" rule (piège n°6):
+ * a forged checkpoint signed by an attacker's own root must never verify just
+ * because the bundle also carries that attacker's root key.
  *
  * Leaf ↔ diploma binding: the server leaf commits to
  * `{diplomaId, schoolId, payloadHash, signature, issuedAt}` (no PII — the log
@@ -48,11 +59,15 @@ function reject(reason: string): TransparencyOutcome {
 }
 
 /**
+ * @param trustedRoots the ONLY CertifyChain PKI root(s) this call trusts — see
+ *        the module doc above and `verifyProofBundle`'s. MANDATORY, and its
+ *        `ed25519` list MUST be non-empty or verification refuses everything.
  * @param opts.forceNoble force the pure-JS @noble path (skip WebCrypto) — used by
  *        tests to prove the fallback works; harmless in production.
  */
 export async function verifyTransparency(
   bundle: ProofBundleDTO,
+  trustedRoots: TrustedRoots,
   opts?: { forceNoble?: boolean },
 ): Promise<TransparencyOutcome> {
   const forceNoble = opts?.forceNoble ?? false;
@@ -60,6 +75,16 @@ export async function verifyTransparency(
     const t = bundle.transparency;
     if (!t) return reject("no transparency proof");
     const { checkpoint } = t;
+
+    // 0 — root pinning, BEFORE the checkpoint signature is checked. Same rule
+    // and same reason as `verifyProofBundle`: `bundle.root.publicKey` is data
+    // under attacker control, never a trust anchor on its own.
+    if (trustedRoots.ed25519.length === 0) {
+      return reject("no trusted CertifyChain root configured — refusing to verify");
+    }
+    if (!isTrustedEd25519Root(bundle.root.publicKey, trustedRoots.ed25519)) {
+      return reject("this proof was not issued by CertifyChain (unknown PKI root)");
+    }
 
     // 1 — the checkpoint (STH) must be signed by the CertifyChain root. The
     //     canonical form mirrors the server checkpoint signer exactly (same
@@ -76,6 +101,24 @@ export async function verifyTransparency(
       !(await verifyEd25519(rootPub, checkpointMessage, b64ToBytes(checkpoint.signature), forceNoble))
     ) {
       return reject("invalid checkpoint signature");
+    }
+
+    // 1-PQ — hybrid "AND" (v2.md §V4-1): a checkpoint signed under `PQ_POLICY`
+    // ALSO carries an ML-DSA-65 root signature over the SAME message. Deduced
+    // from the checkpoint itself (`signaturePq` present), never from a policy
+    // flag: a checkpoint predating the PQ rollout has no `signaturePq` and
+    // keeps verifying Ed25519-only, exactly as before (non-regression).
+    if (checkpoint.signaturePq) {
+      if (!bundle.root.publicKeyPq) {
+        return reject("checkpoint carries a post-quantum signature but the bundle has no PQ root key");
+      }
+      if (!isTrustedMlDsaRoot(bundle.root.publicKeyPq, trustedRoots.mlDsa65)) {
+        return reject("this proof was not issued by CertifyChain (unknown post-quantum PKI root)");
+      }
+      const rootPubPq = b64ToBytes(bundle.root.publicKeyPq);
+      if (!mlDsaVerify(rootPubPq, checkpointMessage, b64ToBytes(checkpoint.signaturePq))) {
+        return reject("invalid post-quantum checkpoint signature");
+      }
     }
 
     // 2 — the leaf must be included in the checkpointed tree (RFC 6962).

@@ -30,7 +30,7 @@ import {
   submitPostalCode,
   startProConnect,
 } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import {
   Button,
   Card,
@@ -153,7 +153,7 @@ export default function VerificationPage() {
     try {
       setState(await getVerificationState());
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Chargement impossible", err.message);
+      toastError("Chargement impossible", apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -195,7 +195,7 @@ export default function VerificationPage() {
         success("Établissement vérifié", "Vous pouvez désormais émettre des diplômes.");
       }
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Action impossible", err.message);
+      toastError("Action impossible", apiErrorMessage(err));
     } finally {
       setBusy(null);
     }
@@ -271,7 +271,7 @@ export default function VerificationPage() {
               const { authorizeUrl } = await startProConnect();
               window.location.href = authorizeUrl;
             } catch (err) {
-              if (err instanceof ApiClientError) toastError("ProConnect", err.message);
+              toastError("ProConnect", apiErrorMessage(err));
               setBusy(null);
             }
           }}

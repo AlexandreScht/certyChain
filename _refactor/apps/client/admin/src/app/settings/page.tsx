@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Bot, Building2, Mail, CheckCircle2, AlertTriangle, Save } from "lucide-react";
 
 import { getSettings, updateSettings } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { Button, Card, Field, Input, Skeleton, PageHeader, useToast } from "@certifychain/shared/ui";
 import { FadeIn } from "@/components/admin";
 import { cn } from "@certifychain/shared/lib/cn";
@@ -27,7 +27,7 @@ export default function AdminSettingsPage() {
       setEnabled(s.autoValidateEnabled);
       setMinScore(s.autoValidateMinScore);
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Chargement impossible", err.message);
+      toastError("Chargement impossible", apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -48,7 +48,7 @@ export default function AdminSettingsPage() {
       setSettings(updated);
       success("Paramètres enregistrés", "La configuration d'auto-validation a été mise à jour.");
     } catch (err) {
-      if (err instanceof ApiClientError) toastError("Enregistrement impossible", err.message);
+      toastError("Enregistrement impossible", apiErrorMessage(err));
     } finally {
       setSaving(false);
     }

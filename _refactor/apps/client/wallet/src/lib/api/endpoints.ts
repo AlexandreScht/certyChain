@@ -17,6 +17,7 @@ import type {
   SessionDTO,
   WalletDiplomaDTO,
   ShareLinkDTO,
+  ShareLinkListDTO,
   ClaimInfoDTO,
 } from "@certifychain/contract/dto";
 
@@ -83,8 +84,20 @@ export function createEudiOffer(id: string): Promise<EudiOfferDTO> {
   );
 }
 
-export function listShareLinks(id: string): Promise<ShareLinkDTO[]> {
-  return unwrap(api.wallet.diplomas[":id"].shares.$get({ param: { id } }));
+/**
+ * Share links for a diploma (R4, audit 2026-07-28 — now paginated server-side,
+ * was unbounded before). This app has no pager UI yet (a student's share
+ * count is small in practice): request the max page size so the experience
+ * is unchanged, and let `ShareLinkListDTO.total` be available for the day a
+ * pager is actually needed.
+ */
+export function listShareLinks(id: string): Promise<ShareLinkListDTO> {
+  return unwrap(
+    api.wallet.diplomas[":id"].shares.$get({
+      param: { id },
+      query: { page: "1", pageSize: "100" },
+    }),
+  );
 }
 
 export function createShareLink(

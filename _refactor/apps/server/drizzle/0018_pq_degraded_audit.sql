@@ -1,0 +1,17 @@
+-- V4 — trace d'audit durable des émissions post-quantiques dégradées.
+--
+-- Sous `PQ_POLICY=dual-sign`, un échec du mint ML-DSA-65 ou de la signature PQ
+-- fait retomber CE diplôme en 'v2' plutôt que de bloquer l'émission (v2.md
+-- §V4-1 : « signe les deux, n'exige que Ed25519 »). Cette dégradation est
+-- IRRÉVERSIBLE — un diplôme déjà émis ne peut pas être re-signé, il faudrait la
+-- clé de l'école et son consentement (v2.md §V4-0). Une ligne de log ne suffit
+-- donc pas : les logs tournent, et personne ne les rapproche de la table
+-- `diplomas` des années plus tard. On veut pouvoir répondre « quels diplômes
+-- avons-nous émis sans protection post-quantique, et pourquoi ».
+--
+-- ⚠️ Piège n°10 (v2.md §6) : `ALTER TYPE … ADD VALUE` ne peut PAS être suivi
+-- d'un usage de la nouvelle valeur dans la MÊME migration (la valeur n'est pas
+-- visible avant la fin de la transaction). Cette migration n'ajoute donc que la
+-- valeur — aucun INSERT/UPDATE/CHECK ne la référence ici. Le premier usage
+-- vient du code applicatif, après migration.
+ALTER TYPE "public"."audit_type" ADD VALUE IF NOT EXISTS 'pq_degraded';

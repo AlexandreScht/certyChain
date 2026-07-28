@@ -22,7 +22,7 @@ import {
 import type { EudiOfferDTO } from "@certifychain/contract/dto";
 import { Button, Modal, Spinner } from "@certifychain/shared/ui";
 
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { createEudiOffer } from "@/lib/api/endpoints";
 
 export interface EudiExportActionProps {
@@ -61,9 +61,10 @@ function isUsableOffer(offer: EudiOfferDTO): boolean {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof ApiClientError
-    ? error.message
-    : "Impossible de générer l’offre EUDI. Réessayez dans quelques instants.";
+  // Delegates to the shared helper — a rate limit (this route is capped per
+  // student, see `VC_OFFER` in `apps/server/src/config/constants.ts`) now
+  // names its concrete delay instead of falling back to a generic sentence.
+  return apiErrorMessage(error, "Impossible de générer l’offre EUDI. Réessayez dans quelques instants.");
 }
 
 /**

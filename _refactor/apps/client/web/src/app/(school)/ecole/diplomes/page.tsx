@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import { listDiplomas, revokeDiploma } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import {
   Button,
   Card,
@@ -97,9 +97,7 @@ export default function SchoolDiplomasPage() {
       setItems(res.items);
       setTotal(res.total);
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        toastError("Chargement impossible", err.message);
-      }
+      toastError("Chargement impossible", apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -136,9 +134,7 @@ export default function SchoolDiplomasPage() {
       );
       setTarget(null);
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        toastError("Révocation impossible", err.message);
-      }
+      toastError("Révocation impossible", apiErrorMessage(err));
     } finally {
       setRevoking(false);
     }

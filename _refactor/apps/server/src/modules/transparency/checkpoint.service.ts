@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, isNotNull, isNull } from "drizzle-orm";
 import type { LogCheckpointDTO } from "@certifychain/contract/dto";
 import { TRANSPARENCY } from "../../config/constants";
 import { env } from "../../config/env";
-import { signLogCheckpoint, type LogCheckpointPayload } from "../../crypto";
+import { signLogCheckpoint, signLogCheckpointPq, type LogCheckpointPayload } from "../../crypto";
 import { db, type DB } from "../../db/client";
 import { type LogCheckpoint, logCheckpoints, issuanceLog } from "../../db/schema";
 import { fail } from "../../lib/http-error";
@@ -52,6 +52,9 @@ export interface CheckpointStore {
     treeSize: number;
     rootHash: string;
     signature: string;
+    /** ML-DSA-65 signature of the SAME message (v2.md §V4-1) — null when
+     *  `PQ_POLICY === "off"`; never retro-applied to a past checkpoint. */
+    signaturePq: string | null;
     createdAt: Date;
   }): Promise<LogCheckpoint>;
   setOtsProof(id: string, proof: Buffer): Promise<void>;
@@ -69,6 +72,9 @@ export interface CheckpointServiceDeps {
   ots: OtsAnchorClient | null;
   now: () => Date;
   signCheckpoint: (payload: LogCheckpointPayload) => string;
+  /** Explicit PQ checkpoint signer (tests). Omitted ⇒ `env.pqEnabled` decides
+   *  (v2.md §V4-1); explicit `null` ⇒ PQ signing disabled regardless of env. */
+  signCheckpointPq: ((payload: LogCheckpointPayload) => string) | null;
   minIntervalMs: number;
 }
 
@@ -81,6 +87,7 @@ export function toLogCheckpointDTO(row: LogCheckpoint): LogCheckpointDTO {
     // `created_at` IS the signed timestamp (stored explicitly at creation).
     timestamp: row.createdAt.toISOString(),
     signature: row.signature,
+    ...(row.signaturePq ? { signaturePq: row.signaturePq } : {}),
     otsAnchored: row.otsUpgradedAt !== null,
     otsUpgradedAt: row.otsUpgradedAt ? row.otsUpgradedAt.toISOString() : null,
     // Buffer.from guards against the driver surfacing bytea as a plain Uint8Array.
@@ -113,6 +120,7 @@ function dbCheckpointStore(database: DB): CheckpointStore {
           treeSize: v.treeSize,
           rootHash: v.rootHash,
           signature: v.signature,
+          signaturePq: v.signaturePq,
           createdAt: v.createdAt,
         })
         .returning();
@@ -152,6 +160,14 @@ export function createCheckpointService(overrides: Partial<CheckpointServiceDeps
   const store = overrides.store ?? dbCheckpointStore(database);
   const now = overrides.now ?? (() => new Date());
   const signCheckpoint = overrides.signCheckpoint ?? ((p: LogCheckpointPayload) => signLogCheckpoint(p));
+  // v2.md §V4-1: PQ checkpoint signing follows `env.pqEnabled` unless a test
+  // explicitly overrides it (including explicit `null` to force it off).
+  const signCheckpointPq =
+    overrides.signCheckpointPq !== undefined
+      ? overrides.signCheckpointPq
+      : env.pqEnabled
+        ? (p: LogCheckpointPayload) => signLogCheckpointPq(p)
+        : null;
   const minIntervalMs = overrides.minIntervalMs ?? TRANSPARENCY.CHECKPOINT_MIN_INTERVAL_SEC * 1000;
   // `undefined` ⇒ use the process-wide default (wired at startup); explicit `null`
   // ⇒ anchoring disabled (tests). Resolved lazily so a late `setDefaultOtsClient`
@@ -204,7 +220,8 @@ export function createCheckpointService(overrides: Partial<CheckpointServiceDeps
     const at = now();
     const timestamp = at.toISOString();
     const signature = signCheckpoint({ treeSize, rootHash, timestamp });
-    const row = await store.insertCheckpoint({ treeSize, rootHash, signature, createdAt: at });
+    const signaturePq = signCheckpointPq ? signCheckpointPq({ treeSize, rootHash, timestamp }) : null;
+    const row = await store.insertCheckpoint({ treeSize, rootHash, signature, signaturePq, createdAt: at });
     lastCreatedMs = at.getTime();
     // Anchoring is best-effort and never blocks (v2.md §V3-5): fire-and-forget.
     if (resolveOts()) {

@@ -8,7 +8,22 @@ import { clientIp, rateLimitIpKey } from "../lib/net";
 import { verifyAccessToken } from "../lib/tokens";
 
 /**
- * In-memory fixed-window limiter (per namespace, per principal).
+ * In-memory SLIDING-WINDOW limiter (per namespace, per principal) — a weighted
+ * two-bucket approximation (P7, PLAN.md), not a fixed window and not a stored
+ * list of hit timestamps (a burst-heavy key must not grow memory unboundedly).
+ *
+ * Each key holds a CURRENT fixed sub-window count plus the PREVIOUS
+ * sub-window's count. The estimated rate is:
+ *
+ *   estimate = prevCount * (1 - elapsedInCurrentSubWindow / windowMs) + currCount
+ *
+ * i.e. the previous sub-window's weight decays linearly as the current one
+ * fills up (it assumes requests were spread evenly across it — the standard
+ * approximation, not exact, but O(1) memory per key and good enough to close
+ * the classic fixed-window gap: 2×max landing in a burst that straddles a
+ * window boundary — max at 23:59:59.9 immediately followed by a fresh max at
+ * 00:00:00.1, which a fixed window allows outright and this does not (see
+ * `test/middleware/rate-limit.test.ts`).
  *
  * The *principal* is deliberately not always the IP: shared egress (campus NAT,
  * carrier CGNAT) puts thousands of distinct people behind one address, so IP is
@@ -19,19 +34,33 @@ import { verifyAccessToken } from "../lib/tokens";
  * anti-flood backstop only.
  *
  * Sufficient for a single instance / MVP. For horizontal scaling, back this with
- * Redis (see PLAN.md › sécurité). Cleanup runs unref'd so it never keeps the
- * process alive.
+ * Redis (see PLAN.md › sécurité) — the day there's a 2ᵉ API instance, this
+ * whole in-memory store needs to move there anyway. Cleanup runs unref'd so it
+ * never keeps the process alive.
  */
 interface Bucket {
-  count: number;
-  resetAt: number;
+  /** The window size this bucket was created with (bounds cleanup + weighting). */
+  windowMs: number;
+  /** Start (ms epoch) of the CURRENT fixed sub-window. */
+  currStart: number;
+  currCount: number;
+  /** Count from the immediately preceding sub-window (0 once it's stale). */
+  prevCount: number;
 }
 
 const store = new Map<string, Bucket>();
 
+// A bucket idle for ≥ 2 of its own windows can no longer influence any
+// estimate (both its current and previous counts have fully decayed) — safe
+// to drop. Bounds the map to actually-active keys, same intent as the old
+// fixed-window cleanup.
+const STALE_WINDOW_MULTIPLIER = 2;
+
 setInterval(() => {
   const now = Date.now();
-  for (const [key, bucket] of store) if (bucket.resetAt <= now) store.delete(key);
+  for (const [key, bucket] of store) {
+    if (now - bucket.currStart > bucket.windowMs * STALE_WINDOW_MULTIPLIER) store.delete(key);
+  }
 }, 60_000).unref();
 
 interface HitResult {
@@ -44,15 +73,33 @@ interface HitResult {
 function hit(id: string, windowMs: number, max: number): HitResult {
   const now = Date.now();
   let bucket = store.get(id);
-  if (!bucket || bucket.resetAt <= now) {
-    bucket = { count: 0, resetAt: now + windowMs };
+  if (!bucket || now - bucket.currStart >= windowMs) {
+    if (bucket && now - bucket.currStart < windowMs * STALE_WINDOW_MULTIPLIER) {
+      // Exactly one sub-window elapsed since the last hit: promote its count
+      // to "previous" so its trailing weight still counts against the new one.
+      bucket = {
+        windowMs,
+        currStart: bucket.currStart + windowMs,
+        currCount: 0,
+        prevCount: bucket.currCount,
+      };
+    } else {
+      // First hit ever for this key, or it's been idle ≥ 2 windows: nothing
+      // from before is still inside the lookback.
+      bucket = { windowMs, currStart: now, currCount: 0, prevCount: 0 };
+    }
     store.set(id, bucket);
   }
-  bucket.count += 1;
+
+  bucket.currCount += 1;
+  const elapsedInCurrent = now - bucket.currStart;
+  const weight = Math.max(0, (windowMs - elapsedInCurrent) / windowMs);
+  const estimated = bucket.prevCount * weight + bucket.currCount;
+  const resetInMs = windowMs - elapsedInCurrent;
   return {
-    limited: bucket.count > max,
-    remaining: Math.max(0, max - bucket.count),
-    resetIn: Math.ceil((bucket.resetAt - now) / 1000),
+    limited: estimated > max,
+    remaining: Math.max(0, Math.floor(max - estimated)),
+    resetIn: Math.ceil(resetInMs / 1000),
   };
 }
 

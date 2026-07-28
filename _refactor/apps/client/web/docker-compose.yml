@@ -19,12 +19,22 @@ services:
       dockerfile: apps/client/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        # Root pinning (audit 2026-07-27): the EXTERNAL API's own CertifyChain
+        # root public key, base64 (SAME value as ITS `CERTIFYCHAIN_ROOT_PUBLIC_KEY`
+        # / `CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY`) — set explicitly here since there is
+        # no co-located server `.env` in a standalone front deployment. Empty
+        # (default) → the offline verifier refuses every bundle explicitly
+        # rather than trusting whatever root it is handed; see `.env.example`.
+        NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY: ${NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY:-}
+        NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY: ${NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY:-}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+      NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY: ${NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PUBLIC_KEY:-}
+      NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY: ${NEXT_PUBLIC_CERTIFYCHAIN_ROOT_PQ_PUBLIC_KEY:-}
     ports:
       - "${WEB_BIND:-0.0.0.0}:3000:3000"
     read_only: true

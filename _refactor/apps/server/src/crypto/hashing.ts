@@ -57,6 +57,27 @@ export function hashSdPayloadV2(p: SdPayloadV2): string {
   return createHash("sha256").update(canonicalize(p), "utf8").digest("hex");
 }
 
+/**
+ * The `ed25519-sd-v3` signed object (v2.md §V4-1) — hybrid post-quantum. Same
+ * exact shape as {@link SdPayloadV2}: only the version literal differs. `v3`
+ * marks that the diploma is ALSO signed in ML-DSA-65 (`signaturePq`) over this
+ * same hash, in addition to the Ed25519 signature every version already has.
+ */
+export interface SdPayloadV3 {
+  v: "sd-v3";
+  h: "sha-256";
+  id: string;
+  schoolId: string;
+  /** Salted per-field digests, sorted lexicographically. */
+  _sd: string[];
+}
+
+/** Hex SHA-256 of the canonical SdPayloadV3 (the value v3 schools sign — the
+ *  SAME hash is fed to BOTH the Ed25519 and the ML-DSA-65 signature). */
+export function hashSdPayloadV3(p: SdPayloadV3): string {
+  return createHash("sha256").update(canonicalize(p), "utf8").digest("hex");
+}
+
 export function sha256Hex(input: string | Buffer): string {
   return createHash("sha256").update(input).digest("hex");
 }

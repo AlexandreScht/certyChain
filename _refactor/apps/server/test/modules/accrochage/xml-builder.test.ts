@@ -37,10 +37,25 @@ function batch(overrides: Partial<CdcBatch> = {}): CdcBatch {
   };
 }
 
+const GOLDEN_URL = new URL("./fixtures/creation.expected.xml", import.meta.url);
+
 describe("CDC XML builder — XSD 1.1.5 product subset", () => {
   it("matches the pinned golden CREATION document byte for byte", () => {
-    const expected = readFileSync(new URL("./fixtures/creation.expected.xml", import.meta.url), "utf8");
+    const expected = readFileSync(GOLDEN_URL, "utf8");
     assert.equal(buildCdcCreationXml(batch()), expected);
+  });
+
+  it("keeps the golden fixture in LF on disk (checkout hygiene, not a tolerance)", () => {
+    // The comparison above is byte-exact ON PURPOSE (XSD 1.1.5 determinism), so
+    // it must never be relaxed to absorb a CRLF checkout. This assertion just
+    // turns the resulting failure into its actual diagnosis: a Windows checkout
+    // with `core.autocrlf=true` rewrote the fixture. The cure is `.gitattributes`
+    // (`* text=auto eol=lf` + `apps/server/test/**/fixtures/**`), never a
+    // normalization in the builder or in the assertion.
+    assert.ok(
+      !readFileSync(GOLDEN_URL, "utf8").includes("\r"),
+      "creation.expected.xml must be stored with LF endings — see .gitattributes",
+    );
   });
 
   it("formats the frozen generation time with an explicit +00:00 offset", () => {

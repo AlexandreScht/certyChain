@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 import { getSchoolJournal, reportJournalEntry } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import {
   Badge,
   Button,
@@ -68,9 +68,7 @@ export default function SchoolJournalPage() {
       setTotal(res.total);
       setIssuanceFrozenAt(res.issuanceFrozenAt);
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        toastError("Chargement impossible", err.message);
-      }
+      toastError("Chargement impossible", apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -106,9 +104,7 @@ export default function SchoolJournalPage() {
       );
       setTarget(null);
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        toastError("Signalement impossible", err.message);
-      }
+      toastError("Signalement impossible", apiErrorMessage(err));
     } finally {
       setReporting(false);
     }

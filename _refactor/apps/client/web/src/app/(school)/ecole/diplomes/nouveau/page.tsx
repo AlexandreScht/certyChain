@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 
 import { createDiploma, importDiplomasCsv } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import {
   Button,
   Card,
@@ -100,11 +100,7 @@ export default function NewDiplomaPage() {
       );
       setForm(EMPTY_FORM);
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        toastError("Émission impossible", err.message);
-      } else {
-        toastError("Émission impossible", "Une erreur inattendue est survenue.");
-      }
+      toastError("Émission impossible", apiErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -137,11 +133,7 @@ export default function NewDiplomaPage() {
         );
       }
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        toastError("Import impossible", err.message);
-      } else {
-        toastError("Import impossible", "Une erreur inattendue est survenue.");
-      }
+      toastError("Import impossible", apiErrorMessage(err));
     } finally {
       setImporting(false);
       // Allow re-selecting the same file.

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 
 import { logout } from "@/lib/api/endpoints";
-import { ApiClientError } from "@/lib/api/client";
+import { apiErrorMessage } from "@/lib/api/client";
 import { Button, useToast } from "@certifychain/shared/ui";
 import { WalletLogo } from "@/components/wallet/WalletLogo";
 import ThemeToggle from "@certifychain/shared/ui/ThemeToggle";
@@ -21,10 +21,9 @@ function WalletTopbar(): JSX.Element {
     try {
       await logout();
     } catch (err) {
-      // A failed logout shouldn't trap the user — still surface the cause.
-      if (err instanceof ApiClientError) {
-        toast.error("Déconnexion", err.message);
-      }
+      // A failed logout shouldn't trap the user — still surface the cause,
+      // even on an unexpected exception (previously silent here, audit R3).
+      toast.error("Déconnexion", apiErrorMessage(err));
     } finally {
       router.replace(LOGIN_PATH);
     }

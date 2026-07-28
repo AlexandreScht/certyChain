@@ -17,7 +17,7 @@ import { verifyEd25519 } from "./keys";
  * — never globally, or already-issued v1 diplomas break.
  */
 /** Discriminant resolved PER diploma (`diplomas.proof_version`), never globally. */
-export type ProofEngineId = "ed25519-nonce-v1" | "ed25519-sd-v2";
+export type ProofEngineId = "ed25519-nonce-v1" | "ed25519-sd-v2" | "ed25519-sd-v3";
 
 export interface ProofEngine {
   readonly id: ProofEngineId;
@@ -90,13 +90,22 @@ class Ed25519NonceEngine implements ProofEngine {
 export const ed25519NonceEngine: ProofEngine = new Ed25519NonceEngine();
 
 /**
- * The `ed25519-sd-v2` engine (v2.md §V1). Selective disclosure changes only WHAT
- * is hashed and signed (the sorted list of salted digests, computed upstream);
- * the single-use nonce anti-replay transport is IDENTICAL to v1 — so it delegates
- * the nonce mechanics verbatim rather than forking them.
+ * Les moteurs de divulgation sélective (`ed25519-sd-v2`, v2.md §V1 — et son
+ * extension hybride `ed25519-sd-v3`, §V4-1). La divulgation sélective ne change
+ * que CE QUI est haché et signé (la liste triée de hachés salés, calculée en
+ * amont) ; le transport anti-rejeu à nonce à usage unique est IDENTIQUE à v1 —
+ * d'où la délégation verbatim des mécaniques de nonce plutôt qu'un fork.
+ *
+ * Une seule classe, deux instances qui ne diffèrent QUE par leur `id` : v3
+ * partage exactement le même transport que v2 (l'ajout d'une signature ML-DSA-65
+ * se joue au niveau du bundle, dont ce moteur n'a aucune part). Mais l'`id` est
+ * la version de preuve RAPPORTÉE — dans la réponse `/verify` et, surtout, dans
+ * la métadonnée d'audit durable. Le faire mentir (« v2 » pour une preuve
+ * hybride) sous-déclarerait à vie la nature des preuves émises, d'autant que
+ * `PQ_POLICY=require` fait de v3 le cas nominal.
  */
 class Ed25519SdEngine implements ProofEngine {
-  readonly id = "ed25519-sd-v2";
+  constructor(readonly id: ProofEngineId) {}
   generateNonce(): string {
     return ed25519NonceEngine.generateNonce();
   }
@@ -115,9 +124,24 @@ class Ed25519SdEngine implements ProofEngine {
   }
 }
 
-export const ed25519SdEngine: ProofEngine = new Ed25519SdEngine();
+export const ed25519SdEngine: ProofEngine = new Ed25519SdEngine("ed25519-sd-v2");
 
-/** Resolve the proof engine for a given diploma's stored `proof_version`. */
-export function engineFor(proofVersion: "v1" | "v2"): ProofEngine {
-  return proofVersion === "v2" ? ed25519SdEngine : ed25519NonceEngine;
+/**
+ * Le moteur `ed25519-sd-v3` (v2.md §V4-1, hybride post-quantique). Mécanique de
+ * nonce strictement identique à `ed25519SdEngine` — seul l'identifiant rapporté
+ * diffère, pour que `VerificationResultDTO.engine` et l'audit correspondent au
+ * `engine` réellement porté par le bundle (`ed25519-sd-v3`).
+ */
+export const ed25519SdV3Engine: ProofEngine = new Ed25519SdEngine("ed25519-sd-v3");
+
+/**
+ * Resolve the proof engine for a given diploma's stored `proof_version`.
+ * Un moteur PAR version : les diplômes v1 et v2 déjà émis passent par exactement
+ * le même objet qu'avant (aucune bascule globale), et v3 obtient son propre
+ * identifiant afin que ce qui est rapporté (réponse HTTP + trace d'audit) ne
+ * mente pas sur la version réelle de la preuve.
+ */
+export function engineFor(proofVersion: "v1" | "v2" | "v3"): ProofEngine {
+  if (proofVersion === "v1") return ed25519NonceEngine;
+  return proofVersion === "v3" ? ed25519SdV3Engine : ed25519SdEngine;
 }
