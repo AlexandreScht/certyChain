@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ShieldCheck, Menu, X } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  AnimatePresence,
+  animate,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useTransform,
+} from "framer-motion";
 import { useTheme } from "@certifychain/shared/hooks/useTheme";
 import ThemeToggle from "@certifychain/shared/ui/ThemeToggle";
 
@@ -13,6 +20,22 @@ const links = [
   { label: "Sécurité", href: "#securite" },
   { label: "Tarifs", href: "#tarifs" },
 ];
+
+const springConfig = {
+  type: "spring" as const,
+  stiffness: 260,
+  damping: 30,
+  mass: 1,
+};
+
+// Resting width of the minified bar. Expressed once as a CSS math expression so
+// the cap (72rem) and the viewport share (85vw) never need unit conversion.
+const MINIFY_WIDTH = "min(85vw, 72rem)";
+// Slightly above half the bar height (62px, up to ~80px when the links wrap) on
+// purpose: the browser clamps it, so the minified bar is a full pill while the
+// radius still tweens over a small, visible range (0 -> 40px) instead of the
+// old 0 -> 9999px, which snapped to a pill within two frames.
+const MINIFY_RADIUS = 40;
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -42,12 +65,22 @@ export default function Navbar() {
 
   const isMinify = scrolled;
 
-  const springConfig = {
-    type: "spring" as const,
-    stiffness: 260,
-    damping: 30,
-    mass: 1,
-  };
+  // A single spring drives the whole top -> minified morph (0 = full-width bar,
+  // 1 = floating pill). Width, radius, offset and tint are all derived from it, so
+  // they move together along one continuous path. Animating each CSS property
+  // separately forced framer-motion to convert mixed units by measuring the DOM
+  // (width 85vw <-> 100%, max-width 72rem <-> 100%) and to tween the border
+  // radius over 0 <-> 9999px: the bar jumped at the start/end of the animation.
+  const progress = useMotionValue(0);
+  useEffect(() => {
+    const controls = animate(progress, isMinify ? 1 : 0, reduce ? { duration: 0 } : springConfig);
+    return () => controls.stop();
+  }, [isMinify, reduce, progress]);
+
+  const width = useTransform(progress, (p) => `calc(100% - ${p} * (100% - ${MINIFY_WIDTH}))`);
+  const y = useTransform(progress, [0, 1], [0, 16]);
+  const borderRadius = useTransform(progress, [0, 1], [0, MINIFY_RADIUS]);
+  const backgroundImage = useTransform(progress, [0, 1], [navBg.top, navBg.minify]);
 
   return (
     <motion.header
@@ -57,18 +90,9 @@ export default function Navbar() {
     >
       <motion.nav
         // No mount animation for the bar itself: it must paint at full width
-        // immediately (SSR + first frame). Without this, Framer animates `width`
-        // from the content width up to 100% on load → a brief "narrow bar" flash.
-        // Scroll-driven minify transitions below still animate normally.
-        initial={false}
-        animate={{
-          width: isMinify ? "85vw" : "100%",
-          maxWidth: isMinify ? "72rem" : "100%",
-          y: isMinify ? 16 : 0,
-          borderRadius: isMinify ? "9999px" : "0px",
-          backgroundImage: isMinify ? navBg.minify : navBg.top,
-        }}
-        transition={reduce ? { duration: 0 } : springConfig}
+        // immediately (SSR + first frame). `progress` starts at 0, i.e. the
+        // full-width state; scroll-driven minify transitions animate it.
+        style={{ width, y, borderRadius, backgroundImage }}
         className={`pointer-events-auto relative px-4 md:px-6 py-2.5 transition-[background-color,border-color,box-shadow,backdrop-filter] duration-500 overflow-hidden backdrop-blur-md ${
           isMinify
             ? "glass shadow-[0_20px_50px_rgba(0,0,0,0.15)]"
